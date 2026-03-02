@@ -136,6 +136,8 @@ interface AppState {
     addRoutine: (routine: Omit<Routine, 'id'>) => void;
     addWorkoutSession: (session: Omit<WorkoutSession, 'id'>) => void;
     addExerciseToLibrary: (item: Omit<ExerciseLibraryItem, 'id'>) => void;
+    updateExerciseInLibrary: (id: string, updates: Partial<ExerciseLibraryItem>) => void;
+    removeExerciseFromLibrary: (id: string) => void;
     addWeightLog: (log: WeightLog) => void;
     addStudyLog: (log: Omit<StudyLog, 'id'>) => void;
     setReadingGoal: (goal: number) => void;
@@ -375,7 +377,17 @@ export const useStore = create<AppState>()(
                 workoutHistory: [{ ...session, id: Date.now().toString() }, ...(state.workoutHistory || [])]
             })),
             addExerciseToLibrary: (item) => set((state) => ({
-                exerciseLibrary: [{ ...item, id: Date.now().toString() }, ...(state.exerciseLibrary || [])]
+                exerciseLibrary: [...(state.exerciseLibrary || []), { ...item, id: Date.now().toString() }]
+            })),
+
+            updateExerciseInLibrary: (id, updates) => set((state) => ({
+                exerciseLibrary: (state.exerciseLibrary || []).map(ex =>
+                    ex.id === id ? { ...ex, ...updates } : ex
+                )
+            })),
+
+            removeExerciseFromLibrary: (id) => set((state) => ({
+                exerciseLibrary: (state.exerciseLibrary || []).filter(ex => ex.id !== id)
             })),
             addWeightLog: (log) => set((state) => {
                 const filtered = (state.weightLogs || []).filter(w => w.date !== log.date);

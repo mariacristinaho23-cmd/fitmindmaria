@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Image } from 'react-native';
 import { theme } from '../styles/theme';
-import { useStore } from '../store/useStore';
-import { Plus, Check, Camera, Dumbbell } from 'lucide-react-native';
+import { useStore, ExerciseLibraryItem } from '../store/useStore';
+import { createWorkout } from '../lib/workouts';
+import { Plus, Check, Camera, Dumbbell, X, Trash2 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function FitnessScreen() {
-    const { routines, addRoutine, workoutHistory, addWorkoutSession, weightLogs, addWeightLog, updateDailyLog, exerciseLibrary, addExerciseToLibrary } = useStore();
+    const { routines, addRoutine, workoutHistory, addWorkoutSession, weightLogs, addWeightLog, updateDailyLog, exerciseLibrary, addExerciseToLibrary, updateExerciseInLibrary, removeExerciseFromLibrary } = useStore();
 
     const [activeTab, setActiveTab] = useState<'rutinas' | 'biblioteca' | 'registrar'>('rutinas');
 
@@ -29,6 +30,7 @@ export default function FitnessScreen() {
     const [libName, setLibName] = useState('');
     const [libMuscle, setLibMuscle] = useState('');
     const [libImage, setLibImage] = useState<string | null>(null);
+    const [editingExercise, setEditingExercise] = useState<ExerciseLibraryItem | null>(null);
 
     // Advanced Workout Logging State
     const [advDuration, setAdvDuration] = useState('');
@@ -61,7 +63,7 @@ export default function FitnessScreen() {
         Alert.alert("Éxito", "Rutina guardada correctamente");
     };
 
-    const handleLogWorkout = () => {
+    const handleLogWorkout = async () => {
         if (!selectedRoutine || !duration) {
             Alert.alert("Faltan datos", "Selecciona una rutina y especifica la duración.");
             return;
@@ -73,6 +75,14 @@ export default function FitnessScreen() {
             durationMinutes: parseInt(duration)
         });
         updateDailyLog(todayStr, { trained: true });
+
+        // Try saving to Supabase
+        const { data, error } = await createWorkout(todayStr, selectedRoutine, parseInt(duration));
+        if (error) {
+            console.error("Error saving to Supabase:", error);
+            // We do not alert the user here as local save succeeded, but we could if strict sync is needed
+        }
+
         setDuration('');
         setSelectedRoutine('');
         Alert.alert("¡Excelente trabajo!", "Entrenamiento registrado.");
@@ -97,10 +107,18 @@ export default function FitnessScreen() {
             allowsEditing: true,
             aspect: [4, 3],
             quality: 0.5,
+            base64: true,
         });
 
         if (!result.canceled) {
-            setLibImage(result.assets[0].uri);
+            const asset = result.assets[0];
+            if (asset.base64) {
+                // Determine mime type from uri or default to jpeg
+                const mimeType = asset.uri?.endsWith('.png') ? 'image/png' : 'image/jpeg';
+                setLibImage(`data:${mimeType};base64,${asset.base64}`);
+            } else {
+                setLibImage(asset.uri);
+            }
         }
     };
 
@@ -109,13 +127,56 @@ export default function FitnessScreen() {
             Alert.alert("Faltan datos", "Completa nombre y grupo muscular.");
             return;
         }
-        addExerciseToLibrary({
-            name: libName,
-            muscleGroup: libMuscle,
-            imageUri: libImage
-        });
+        if (editingExercise) {
+            updateExerciseInLibrary(editingExercise.id, {
+                name: libName,
+                muscleGroup: libMuscle,
+                ...(libImage ? { imageUri: libImage } : { imageUri: undefined }) // explicitly handle undefined
+            });
+            Alert.alert("Actualizado", "Ejercicio actualizado correctamente.");
+        } else {
+            addExerciseToLibrary({
+                name: libName,
+                muscleGroup: libMuscle,
+                imageUri: libImage || null
+            });
+            Alert.alert("Guardado", "Ejercicio agregado a la biblioteca.");
+        }
+        setEditingExercise(null);
         setLibName(''); setLibMuscle(''); setLibImage(null);
-        Alert.alert("Guardado", "Ejercicio agregado a la biblioteca.");
+    };
+
+    const handleEditExercise = (ex: ExerciseLibraryItem) => {
+        setEditingExercise(ex);
+        setLibName(ex.name);
+        setLibMuscle(ex.muscleGroup);
+        // Ensure imageUri is properly set in the state
+        setLibImage(ex.imageUri || null);
+    };
+
+    const handleCancelEdit = () => {
+        setEditingExercise(null);
+        setLibName(''); setLibMuscle(''); setLibImage(null);
+    };
+
+    const handleDeleteExercise = () => {
+        if (!editingExercise) return;
+        Alert.alert(
+            "Eliminar Ejercicio",
+            `¿Estás seguro que deseas eliminar "${editingExercise.name}" de tu biblioteca?`,
+            [
+                { text: "Cancelar", style: "cancel" },
+                {
+                    text: "Eliminar",
+                    style: "destructive",
+                    onPress: () => {
+                        removeExerciseFromLibrary(editingExercise.id);
+                        handleCancelEdit();
+                        Alert.alert("Eliminado", "El ejercicio ha sido borrado.");
+                    }
+                }
+            ]
+        );
     };
 
     const handleAddAdvExercise = (exerciseId: string) => {
@@ -126,16 +187,16 @@ export default function FitnessScreen() {
         }
     };
 
-    const handleUpdateAdvExercise = (exerciseId: string, field: 'weight'|'reps'|'sets', value: string) => {
+    const handleUpdateAdvExercise = (exerciseId: string, field: 'weight' | 'reps' | 'sets', value: string) => {
         setAdvExercises(advExercises.map(e => e.exerciseId === exerciseId ? { ...e, [field]: value } : e));
     };
 
-    const handleSaveAdvWorkout = () => {
+    const handleSaveAdvWorkout = async () => {
         if (!advDuration) {
             Alert.alert("Error", "Debes ingresar al menos la duración.");
             return;
         }
-        
+
         const validExs = advExercises.filter(e => e.weight && e.reps && e.sets).map(e => ({
             exerciseId: e.exerciseId,
             weight: parseFloat(e.weight),
@@ -144,14 +205,24 @@ export default function FitnessScreen() {
         }));
 
         const todayStr = new Date().toISOString().split('T')[0];
+        const routineName = advRoutineName || "Entrenamiento Libre";
+
+        // Save locally
         addWorkoutSession({
             date: todayStr,
-            routineName: advRoutineName || "Entrenamiento Libre",
+            routineName: routineName,
             durationMinutes: parseInt(advDuration),
             exercises: validExs
         });
         updateDailyLog(todayStr, { trained: true });
-        
+
+        // Try saving to Supabase
+        const { data, error } = await createWorkout(todayStr, routineName, parseInt(advDuration));
+        if (error) {
+            console.error("Error saving to Supabase:", error);
+            // We do not alert the user here as local save succeeded, but we could if strict sync is needed
+        }
+
         setAdvDuration(''); setAdvRoutineName(''); setAdvExercises([]);
         Alert.alert("¡Excelente!", "Entrenamiento registrado.");
     };
@@ -221,6 +292,27 @@ export default function FitnessScreen() {
 
                             <View style={styles.exerciseForm}>
                                 <Text style={styles.label}>Agregar Ejercicio:</Text>
+
+                                {exerciseLibrary && exerciseLibrary.length > 0 && (
+                                    <>
+                                        <Text style={[styles.subtext, { marginBottom: 5 }]}>O elige desde tu biblioteca:</Text>
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                                            {exerciseLibrary.map(ex => {
+                                                const isSelected = exName === ex.name;
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={ex.id}
+                                                        style={[styles.libraryChip, isSelected && styles.libraryChipActive]}
+                                                        onPress={() => setExName(ex.name)}
+                                                    >
+                                                        <Text style={[styles.libraryChipText, isSelected && styles.libraryChipTextActive]}>{ex.name}</Text>
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
+                                        </ScrollView>
+                                    </>
+                                )}
+
                                 <TextInput style={styles.input} placeholder="Nombre (ej. Sentadilla)" value={exName} onChangeText={setExName} />
                                 <View style={styles.row}>
                                     <TextInput style={[styles.input, { flex: 1 }]} placeholder="Peso (kg)" keyboardType="numeric" value={exWeight} onChangeText={setExWeight} />
@@ -265,7 +357,17 @@ export default function FitnessScreen() {
                 {activeTab === 'biblioteca' && (
                     <>
                         <View style={styles.card}>
-                            <Text style={styles.cardTitle}>Agregar Ejercicio a la Biblioteca</Text>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.md }}>
+                                <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
+                                    {editingExercise ? 'Editar Ejercicio' : 'Agregar Ejercicio a la Biblioteca'}
+                                </Text>
+                                {editingExercise && (
+                                    <TouchableOpacity onPress={handleCancelEdit}>
+                                        <X color={theme.colors.textLight} size={24} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+
                             <TextInput
                                 style={styles.input}
                                 placeholder="Nombre del Ejercicio (ej. Press Militar)"
@@ -278,7 +380,7 @@ export default function FitnessScreen() {
                                 value={libMuscle}
                                 onChangeText={setLibMuscle}
                             />
-                            
+
                             <TouchableOpacity style={styles.outlineBtn} onPress={handlePickImage}>
                                 <Camera color={theme.colors.primary} size={20} />
                                 <Text style={styles.outlineBtnText}>{libImage ? "Cambiar Imagen" : "Elegir Imagen de Galería"}</Text>
@@ -286,32 +388,59 @@ export default function FitnessScreen() {
                             {libImage && (
                                 <Image source={{ uri: libImage }} style={styles.previewImage} />
                             )}
-                            
+
                             <TouchableOpacity style={styles.submitBtn} onPress={handleSaveLibraryDb}>
-                                <Text style={styles.submitBtnText}>Guardar en Biblioteca</Text>
+                                <Text style={styles.submitBtnText}>{editingExercise ? 'Guardar Cambios' : 'Guardar en Biblioteca'}</Text>
                             </TouchableOpacity>
+
+                            {editingExercise && (
+                                <TouchableOpacity style={[styles.outlineBtn, { borderColor: theme.colors.error, marginTop: theme.spacing.md }]} onPress={handleDeleteExercise}>
+                                    <Trash2 color={theme.colors.error} size={20} />
+                                    <Text style={[styles.outlineBtnText, { color: theme.colors.error }]}>Eliminar Ejercicio</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
 
-                        <Text style={[styles.cardTitle, { marginVertical: 10, marginLeft: 5 }]}>Mi Biblioteca ({exerciseLibrary?.length || 0})</Text>
-                        {(exerciseLibrary || []).map(ex => {
-                            const recent = getRecentHistoryForLibraryEx(ex.id);
-                            return (
-                                <View key={ex.id} style={styles.libraryCard}>
-                                    {ex.imageUri ? <Image source={{ uri: ex.imageUri }} style={styles.libThumb} /> : <View style={styles.libThumb} />}
-                                    <View style={styles.libInfo}>
-                                        <Text style={styles.libName}>{ex.name}</Text>
-                                        <Text style={styles.libMuscle}>{ex.muscleGroup}</Text>
-                                        {recent ? (
-                                            <Text style={styles.libRecent}>
-                                                Última vez: {recent.weight}kg | {recent.sets}x{recent.reps} ({recent.date})
-                                            </Text>
-                                        ) : (
-                                            <Text style={styles.libRecent}>Sin historial registrado.</Text>
-                                        )}
-                                    </View>
-                                </View>
-                            );
-                        })}
+                        {!editingExercise && (
+                            <>
+                                <Text style={[styles.cardTitle, { marginVertical: 10, marginLeft: 5 }]}>Mi Biblioteca ({exerciseLibrary?.length || 0})</Text>
+                                <Text style={[styles.subtext, { marginLeft: 5, marginBottom: 10 }]}>Toca un ejercicio para ver sus detalles o editarlo.</Text>
+
+                                {(() => {
+                                    const grouped = (exerciseLibrary || []).reduce((acc: Record<string, ExerciseLibraryItem[]>, ex) => {
+                                        const group = ex.muscleGroup ? ex.muscleGroup.trim().toUpperCase() : 'OTROS';
+                                        if (!acc[group]) acc[group] = [];
+                                        acc[group].push(ex);
+                                        return acc;
+                                    }, {});
+
+                                    return Object.keys(grouped).sort().map(muscle => (
+                                        <View key={muscle} style={{ marginBottom: theme.spacing.md }}>
+                                            <Text style={styles.muscleGroupTitle}>{muscle}</Text>
+                                            {grouped[muscle].map(ex => {
+                                                const recent = getRecentHistoryForLibraryEx(ex.id);
+                                                return (
+                                                    <TouchableOpacity key={ex.id} style={styles.libraryCard} onPress={() => handleEditExercise(ex)}>
+                                                        {ex.imageUri ? <Image source={{ uri: ex.imageUri }} style={styles.libThumb} /> : <View style={styles.libThumb} />}
+                                                        <View style={styles.libInfo}>
+                                                            <Text style={styles.libName}>{ex.name}</Text>
+                                                            {/* Hiding muscle name here since it's the section header now */}
+                                                            {recent ? (
+                                                                <Text style={styles.libRecent}>
+                                                                    Última vez: {recent.weight}kg | {recent.sets}x{recent.reps} ({recent.date})
+                                                                </Text>
+                                                            ) : (
+                                                                <Text style={styles.libRecent}>Sin historial registrado.</Text>
+                                                            )}
+                                                        </View>
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
+                                        </View>
+                                    ));
+                                })()}
+                            </>
+                        )}
                     </>
                 )}
 
@@ -334,7 +463,7 @@ export default function FitnessScreen() {
                             />
 
                             <Text style={[styles.label, { marginBottom: 10 }]}>Elige ejercicios (Tap para seleccionar):</Text>
-                            
+
                             {(exerciseLibrary || []).length === 0 && (
                                 <Text style={styles.subtext}>Ve a la biblioteca a agregar ejercicios primero.</Text>
                             )}
@@ -343,8 +472,8 @@ export default function FitnessScreen() {
                                 {(exerciseLibrary || []).map(ex => {
                                     const isSelected = !!advExercises.find(a => a.exerciseId === ex.id);
                                     return (
-                                        <TouchableOpacity 
-                                            key={ex.id} 
+                                        <TouchableOpacity
+                                            key={ex.id}
                                             style={[styles.libraryChip, isSelected && styles.libraryChipActive]}
                                             onPress={() => handleAddAdvExercise(ex.id)}
                                         >
@@ -385,7 +514,7 @@ export default function FitnessScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
-    tabsRow: { flexDirection: 'row', backgroundColor: theme.colors.surface, paddingTop: 50, paddingBottom: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset:{ width:0, height:2}, elevation:2, zIndex: 10 },
+    tabsRow: { flexDirection: 'row', backgroundColor: theme.colors.surface, paddingTop: 50, paddingBottom: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, elevation: 2, zIndex: 10 },
     tabBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: theme.spacing.sm, borderBottomWidth: 2, borderBottomColor: 'transparent' },
     tabBtnActive: { borderBottomColor: theme.colors.primary },
     tabBtnText: { ...theme.typography.caption, color: theme.colors.textLight, marginTop: 4, fontWeight: '600' },
@@ -414,12 +543,13 @@ const styles = StyleSheet.create({
     routineChipText: { ...theme.typography.body, color: theme.colors.text },
     routineChipTextActive: { color: theme.colors.surface, fontWeight: '600' },
     previewImage: { width: '100%', height: 200, borderRadius: theme.borderRadius.md, marginBottom: theme.spacing.sm, resizeMode: 'cover' },
-    libraryCard: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.sm, marginBottom: theme.spacing.md, flexDirection: 'row', padding: theme.spacing.sm, shadowColor: '#000', shadowOffset:{width:0, height:1}, shadowOpacity: 0.05, elevation: 1 },
+    libraryCard: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.sm, marginBottom: theme.spacing.md, flexDirection: 'row', padding: theme.spacing.sm, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, elevation: 1 },
     libThumb: { width: 60, height: 60, borderRadius: theme.borderRadius.sm, marginRight: theme.spacing.md, backgroundColor: '#eee' },
     libInfo: { flex: 1, justifyContent: 'center' },
-    libName: { ...theme.typography.h4, color: theme.colors.text },
+    libName: { ...theme.typography.h2, color: theme.colors.text },
     libMuscle: { ...theme.typography.caption, color: theme.colors.accent, fontWeight: '600', marginTop: 2 },
     libRecent: { ...theme.typography.caption, color: theme.colors.textLight, marginTop: 4 },
+    muscleGroupTitle: { ...theme.typography.body, fontWeight: '700', color: theme.colors.primary, marginLeft: 5, marginBottom: theme.spacing.sm, letterSpacing: 1 },
     libraryChip: { paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm, backgroundColor: '#F5F5F5', borderRadius: theme.borderRadius.full, marginRight: theme.spacing.sm, borderWidth: 1, borderColor: 'transparent' },
     libraryChipActive: { borderColor: theme.colors.primary, backgroundColor: '#F0F8FF' },
     libraryChipText: { ...theme.typography.body, color: theme.colors.text },

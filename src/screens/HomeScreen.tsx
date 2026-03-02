@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { theme } from '../styles/theme';
 import { useStore, Emotion, calculateStreak } from '../store/useStore';
 import { CheckCircle2, Circle, Flame, Brain, BookOpen, Activity, Dumbbell, Zap, Target } from 'lucide-react-native';
+import { createWorkout } from '../lib/workouts';
 
 const MOTIVATIONAL_QUOTES = [
     "Cada pequeña elección suma a la persona en la que te estás convirtiendo.",
@@ -124,7 +125,6 @@ export default function HomeScreen() {
             {renderLevelProgress(level, xp)}
         </View>
     );
-
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
             <View style={styles.header}>
