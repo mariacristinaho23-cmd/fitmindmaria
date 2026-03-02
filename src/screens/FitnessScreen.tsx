@@ -175,7 +175,7 @@ export default function FitnessScreen() {
         const { error } = await saveExercise(exerciseData);
 
         if (error) {
-            Alert.alert("Error", "No se pudo guardar el ejercicio.");
+            Alert.alert("Error", error.message || JSON.stringify(error));
             return;
         }
 
