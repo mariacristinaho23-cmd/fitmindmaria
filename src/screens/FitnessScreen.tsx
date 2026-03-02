@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Image } from 'react-native';
 import { theme } from '../styles/theme';
 import { useStore, ExerciseLibraryItem } from '../store/useStore';
-import { createWorkout } from '../lib/workouts';
+import { createWorkout, fetchExercises, saveExercise, deleteExercise as deleteExerciseDb } from '../lib/workouts';
 import { Plus, Check, Camera, Dumbbell, X, Trash2 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function FitnessScreen() {
-    const { routines, addRoutine, workoutHistory, addWorkoutSession, weightLogs, addWeightLog, updateDailyLog, exerciseLibrary, addExerciseToLibrary, updateExerciseInLibrary, removeExerciseFromLibrary } = useStore();
+    const { routines, addRoutine, workoutHistory, addWorkoutSession, weightLogs, addWeightLog, updateDailyLog, exerciseLibrary, setExerciseLibrary, addExerciseToLibrary, updateExerciseInLibrary, removeExerciseFromLibrary } = useStore();
 
     const [activeTab, setActiveTab] = useState<'rutinas' | 'biblioteca' | 'registrar'>('rutinas');
 
@@ -36,6 +36,26 @@ export default function FitnessScreen() {
     const [advDuration, setAdvDuration] = useState('');
     const [advRoutineName, setAdvRoutineName] = useState('');
     const [advExercises, setAdvExercises] = useState<{ exerciseId: string; weight: string; reps: string; sets: string }[]>([]);
+
+    useEffect(() => {
+        if (activeTab === 'biblioteca') {
+            loadExercisesFromDb();
+        }
+    }, [activeTab]);
+
+    const loadExercisesFromDb = async () => {
+        const { data, error } = await fetchExercises();
+        if (data && !error) {
+            setExerciseLibrary(data.map(ex => ({
+                id: ex.id,
+                name: ex.name,
+                muscleGroup: ex.muscleGroup,
+                notes: ex.notes || undefined,
+                equipment: ex.equipment || undefined,
+                imageUri: ex.imageUri || undefined
+            })));
+        }
+    };
 
     const handleAddExercise = () => {
         if (!exName || !exWeight || !exReps || !exSets) {
@@ -112,36 +132,58 @@ export default function FitnessScreen() {
 
         if (!result.canceled) {
             const asset = result.assets[0];
+            let finalUri = asset.uri;
+
             if (asset.base64) {
                 // Determine mime type from uri or default to jpeg
-                const mimeType = asset.uri?.endsWith('.png') ? 'image/png' : 'image/jpeg';
-                setLibImage(`data:${mimeType};base64,${asset.base64}`);
-            } else {
-                setLibImage(asset.uri);
+                const mimeType = finalUri?.endsWith('.png') ? 'image/png' : 'image/jpeg';
+                finalUri = `data:${mimeType};base64,${asset.base64}`;
+            } else if (finalUri.startsWith('blob:')) {
+                try {
+                    const response = await fetch(finalUri);
+                    const blob = await response.blob();
+                    finalUri = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result as string);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                    });
+                } catch (e) {
+                    console.error("Error converting blob", e);
+                }
             }
+
+            setLibImage(finalUri);
         }
     };
 
-    const handleSaveLibraryDb = () => {
+    const handleSaveLibraryDb = async () => {
         if (!libName || !libMuscle) {
             Alert.alert("Faltan datos", "Completa nombre y grupo muscular.");
             return;
         }
-        if (editingExercise) {
-            updateExerciseInLibrary(editingExercise.id, {
-                name: libName,
-                muscleGroup: libMuscle,
-                ...(libImage ? { imageUri: libImage } : { imageUri: undefined }) // explicitly handle undefined
-            });
-            Alert.alert("Actualizado", "Ejercicio actualizado correctamente.");
-        } else {
-            addExerciseToLibrary({
-                name: libName,
-                muscleGroup: libMuscle,
-                imageUri: libImage || null
-            });
-            Alert.alert("Guardado", "Ejercicio agregado a la biblioteca.");
+
+        console.log("Saving Exercise to Db:", { libName, libMuscle, libImage, editingExerciseId: editingExercise?.id });
+
+        const exerciseData = {
+            id: editingExercise?.id,
+            name: libName,
+            muscleGroup: libMuscle,
+            imageUri: libImage || undefined
+        };
+
+        const { error } = await saveExercise(exerciseData);
+
+        if (error) {
+            Alert.alert("Error", "No se pudo guardar el ejercicio.");
+            return;
         }
+
+        Alert.alert(editingExercise ? "Actualizado" : "Guardado", "Ejercicio guardado en la biblioteca.");
+
+        // Refresh the list from the cloud
+        await loadExercisesFromDb();
+
         setEditingExercise(null);
         setLibName(''); setLibMuscle(''); setLibImage(null);
     };
@@ -169,10 +211,16 @@ export default function FitnessScreen() {
                 {
                     text: "Eliminar",
                     style: "destructive",
-                    onPress: () => {
-                        removeExerciseFromLibrary(editingExercise.id);
-                        handleCancelEdit();
-                        Alert.alert("Eliminado", "El ejercicio ha sido borrado.");
+                    onPress: async () => {
+                        const { error } = await deleteExerciseDb(editingExercise.id);
+                        if (error) {
+                            Alert.alert('Error', 'No se pudo eliminar el ejercicio.');
+                        } else {
+                            await loadExercisesFromDb();
+                            setEditingExercise(null);
+                            setLibName(''); setLibMuscle(''); setLibImage(null);
+                            Alert.alert("Eliminado", "El ejercicio ha sido borrado.");
+                        }
                     }
                 }
             ]

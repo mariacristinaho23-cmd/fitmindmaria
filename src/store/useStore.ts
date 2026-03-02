@@ -135,6 +135,7 @@ interface AppState {
     addJournalEntry: (entry: Omit<JournalEntry, 'id'>) => void;
     addRoutine: (routine: Omit<Routine, 'id'>) => void;
     addWorkoutSession: (session: Omit<WorkoutSession, 'id'>) => void;
+    setExerciseLibrary: (library: ExerciseLibraryItem[]) => void;
     addExerciseToLibrary: (item: Omit<ExerciseLibraryItem, 'id'>) => void;
     updateExerciseInLibrary: (id: string, updates: Partial<ExerciseLibraryItem>) => void;
     removeExerciseFromLibrary: (id: string) => void;
@@ -376,6 +377,7 @@ export const useStore = create<AppState>()(
             addWorkoutSession: (session) => set((state) => ({
                 workoutHistory: [{ ...session, id: Date.now().toString() }, ...(state.workoutHistory || [])]
             })),
+            setExerciseLibrary: (library) => set({ exerciseLibrary: library }),
             addExerciseToLibrary: (item) => set((state) => ({
                 exerciseLibrary: [...(state.exerciseLibrary || []), { ...item, id: Date.now().toString() }]
             })),
