@@ -76,7 +76,7 @@ export default function AuthScreen() {
         >
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
-                keyboardShouldPersistTaps="handled"
+                keyboardShouldPersistTaps="always"
             >
                 <View style={styles.header}>
                     <Text style={styles.title}>FitMind</Text>
@@ -112,7 +112,7 @@ export default function AuthScreen() {
                             disabled={loading}
                             onPress={signInWithEmail}
                         >
-                            <Text style={styles.primaryButtonText}>Iniciar Sesión</Text>
+                            <Text style={styles.primaryButtonText}>{loading ? 'Cargando...' : 'Iniciar Sesión'}</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -120,7 +120,7 @@ export default function AuthScreen() {
                             disabled={loading}
                             onPress={signUpWithEmail}
                         >
-                            <Text style={styles.secondaryButtonText}>Crear Cuenta</Text>
+                            <Text style={styles.secondaryButtonText}>{loading ? 'Cargando...' : 'Crear Cuenta'}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
