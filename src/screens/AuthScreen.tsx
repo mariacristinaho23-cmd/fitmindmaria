@@ -11,6 +11,10 @@ export default function AuthScreen() {
     const [loading, setLoading] = useState(false);
 
     async function signInWithEmail() {
+        if (!email || !password) {
+            Alert.alert("Error", "Por favor ingresa tu correo y contraseña.");
+            return;
+        }
         console.log("Intentando iniciar sesión con", email);
         setLoading(true);
         try {
@@ -34,6 +38,10 @@ export default function AuthScreen() {
     }
 
     async function signUpWithEmail() {
+        if (!email || !password) {
+            Alert.alert("Error", "Por favor ingresa tu correo y contraseña.");
+            return;
+        }
         console.log("Intentando crear cuenta con", email);
         setLoading(true);
         try {
