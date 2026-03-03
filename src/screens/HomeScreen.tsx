@@ -1,8 +1,8 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Animated, Easing, TextInput } from 'react-native';
 import { theme } from '../styles/theme';
 import { useStore, Emotion, calculateStreak } from '../store/useStore';
-import { CheckCircle2, Circle, Flame, Brain, BookOpen, Activity, Dumbbell, Zap, Target } from 'lucide-react-native';
+import { CheckCircle2, Circle, Flame, Brain, BookOpen, Activity, Dumbbell, Target } from 'lucide-react-native';
 import { createWorkout } from '../lib/workouts';
 
 const MOTIVATIONAL_QUOTES = [
@@ -14,18 +14,67 @@ const MOTIVATIONAL_QUOTES = [
 
 export default function HomeScreen() {
     const {
-        dailyLogs, updateDailyLog, dailyPlans, generateDailyPlan, nivelDisciplina, addXP,
-        nivelFitness, xpFitness,
-        nivelIngles, xpIngles,
-        nivelPython, xpPython,
-        nivelLectura, xpLectura,
-        nivelAzucar, xpAzucar
+        dailyLogs, updateDailyLog, dailyPlans, generateDailyPlan,
+        nivelFitness,
+        nivelIngles,
+        nivelLectura,
+        nivelAzucar,
+        studyLogs,
+        finalizeDay,
+        dailyBosses,
+        addStudyLog,
+        creditosDisponibles,
     } = useStore();
     const todayStr = new Date().toISOString().split('T')[0];
     const todaysLog = dailyLogs[todayStr] || {
-        date: todayStr, sugarFree: false, emotion: null, trained: false, read: false, english: false, python: false
+        date: todayStr, sugarFree: false, emotion: null, trained: false, read: false, english: false
     };
     const todaysPlan = dailyPlans[todayStr];
+
+    const [barWidth, setBarWidth] = useState(0);
+    const animValue = useRef(new Animated.Value(0)).current;
+    const scaleAnim = useRef(new Animated.Value(1)).current;
+
+    // compute boss percent
+    const computePct = () => {
+        const plan = (dailyPlans && dailyPlans[todayStr]) || null;
+        let total = 0, done = 0;
+        if (plan) {
+            if (plan.fitnessPlan) total++;
+            if (plan.readingPlan) total++;
+            if (plan.englishPlan) total++;
+        }
+        const todayLog = dailyLogs[todayStr];
+        if (todayLog) {
+            if (todayLog.trained) done++;
+            if (todayLog.read) done++;
+            if (todayLog.english) done++;
+        }
+        if (total === 0) total = 1;
+        return Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+    };
+
+    const pct = computePct();
+
+    const animWidth = barWidth
+        ? animValue.interpolate({ inputRange: [0, 100], outputRange: [0, barWidth] })
+        : animValue.interpolate({ inputRange: [0, 1], outputRange: [0, 0] });
+
+    useEffect(() => {
+        Animated.timing(animValue, {
+            toValue: pct,
+            duration: 600,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: false,
+        }).start();
+
+        if (pct === 100) {
+            Animated.sequence([
+                Animated.timing(scaleAnim, { toValue: 1.08, duration: 220, useNativeDriver: true }),
+                Animated.timing(scaleAnim, { toValue: 1, duration: 220, useNativeDriver: true })
+            ]).start();
+        }
+    }, [pct, barWidth]);
 
     useEffect(() => {
         if (!todaysPlan) {
@@ -44,7 +93,7 @@ export default function HomeScreen() {
     const sugarFreeStreak = calculateStreak(dailyLogs, 'sugarFree');
     const readingStreak = calculateStreak(dailyLogs, 'read');
     const englishStreak = calculateStreak(dailyLogs, 'english');
-    const pythonStreak = calculateStreak(dailyLogs, 'python');
+    // python domain removed
 
     const handleSugarUpdate = (consumed: boolean) => {
         const wasSugarFree = todaysLog.sugarFree === true;
@@ -52,37 +101,13 @@ export default function HomeScreen() {
 
         updateDailyLog(todayStr, { sugarFree: willBeSugarFree });
 
-        if (todaysPlan) {
-            const xpAmount = todaysPlan.modo === 'intenso' ? 15 : todaysPlan.modo === 'estandar' ? 10 : 5;
-            if (willBeSugarFree && !wasSugarFree) {
-                addXP('Azucar', xpAmount);
-            } else if (!willBeSugarFree && wasSugarFree) {
-                addXP('Azucar', -xpAmount);
-            }
-        }
-
         // Timeout to allow state to flush before regenerating plan, updating UI
         setTimeout(() => {
             generateDailyPlan(todayStr);
         }, 0);
     };
 
-    const renderLevelProgress = (level: number, xp: number) => {
-        const maxXp = level * 20;
-        const progress = Math.min(Math.max((xp / maxXp) * 100, 0), 100);
-
-        return (
-            <View style={styles.progressContainer}>
-                <View style={styles.progressHeader}>
-                    <Text style={styles.levelText}>Lvl {level}</Text>
-                    <Text style={styles.xpText}>{Math.max(0, xp)} / {maxXp} XP</Text>
-                </View>
-                <View style={styles.progressBarBg}>
-                    <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
-                </View>
-            </View>
-        );
-    };
+    // XP/level visuals removed — replaced by credits and Aura
 
     const emotions: { emoji: string; value: Emotion }[] = [
         { emoji: '😁', value: 'great' },
@@ -94,7 +119,73 @@ export default function HomeScreen() {
 
     const Quote = MOTIVATIONAL_QUOTES[sugarFreeStreak % MOTIVATIONAL_QUOTES.length];
 
-    const renderTaskToggle = (title: string, field: keyof typeof todaysLog, domain: 'Fitness' | 'Ingles' | 'Python' | 'Lectura', level: number, xp: number, streak?: number) => (
+    const [pagesInput, setPagesInput] = useState('');
+    const [snackMsg, setSnackMsg] = useState<string | null>(null);
+    const snackAnim = useRef(new Animated.Value(80)).current;
+    const addBtnScale = useRef(new Animated.Value(1)).current;
+    const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+    const creditScale = useRef(new Animated.Value(1)).current;
+
+    useEffect(() => {
+        // pulse animation when credits change
+        Animated.sequence([
+            Animated.timing(creditScale, { toValue: 1.08, duration: 160, useNativeDriver: true }),
+            Animated.timing(creditScale, { toValue: 1, duration: 180, useNativeDriver: true })
+        ]).start();
+    }, [creditosDisponibles]);
+
+    // delta tooltip for credit changes
+    const prevCredits = useRef<number | null>(creditosDisponibles || 0);
+    const [creditDeltaText, setCreditDeltaText] = useState<string | null>(null);
+    const deltaAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        const prev = prevCredits.current ?? 0;
+        const curr = creditosDisponibles || 0;
+        const delta = curr - prev;
+        if (delta !== 0) {
+            setCreditDeltaText(`${delta > 0 ? '+' : '-'}${Math.abs(delta)}`);
+            deltaAnim.setValue(0);
+            Animated.sequence([
+                Animated.timing(deltaAnim, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+                Animated.delay(900),
+                Animated.timing(deltaAnim, { toValue: 0, duration: 260, easing: Easing.in(Easing.cubic), useNativeDriver: true })
+            ]).start(() => setCreditDeltaText(null));
+        }
+        prevCredits.current = curr;
+    }, [creditosDisponibles]);
+
+    const showSnack = (msg: string) => {
+        setSnackMsg(msg);
+        snackAnim.setValue(80);
+        Animated.timing(snackAnim, { toValue: 0, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(() => {
+            setTimeout(() => {
+                Animated.timing(snackAnim, { toValue: 80, duration: 250, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(() => setSnackMsg(null));
+            }, 1400);
+        });
+    };
+
+    const handleAddPagesHome = () => {
+        const n = parseInt(pagesInput || '0', 10);
+        if (!n || n <= 0) return showSnack('Introduce un número válido de páginas');
+        // button press animation
+        Animated.sequence([
+            Animated.timing(addBtnScale, { toValue: 0.96, duration: 100, useNativeDriver: true }),
+            Animated.timing(addBtnScale, { toValue: 1, duration: 120, useNativeDriver: true })
+        ]).start();
+        const today = new Date().toISOString().split('T')[0];
+        try {
+            addStudyLog({ date: today, type: 'reading', timeMinutes: 0, pagesRead: n });
+            setPagesInput('');
+            const amount = n * 10;
+            const total = (useStore.getState().creditosDisponibles || 0);
+            showSnack(`+${amount} ✨  •  Total: ${total}`);
+        } catch (e) {
+            showSnack('Error: no se pudo registrar las páginas');
+        }
+    };
+
+    const renderTaskToggle = (title: string, field: keyof typeof todaysLog, domain: 'Fitness' | 'Ingles' | 'Lectura', level: number, streak?: number) => (
         <View style={styles.taskContainer}>
             <TouchableOpacity
                 style={styles.taskRow}
@@ -103,8 +194,6 @@ export default function HomeScreen() {
                         const isCurrentlyDone = todaysLog[field];
                         const newStatus = !isCurrentlyDone;
                         updateDailyLog(todayStr, { [field]: newStatus });
-                        const xpAmount = todaysPlan.modo === 'intenso' ? 15 : todaysPlan.modo === 'estandar' ? 10 : 5;
-                        addXP(domain, newStatus ? xpAmount : -xpAmount);
                     }
                 }}
             >
@@ -114,7 +203,7 @@ export default function HomeScreen() {
                     <Circle color={theme.colors.textLight} size={24} />
                 )}
                 <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
-                    <Text style={[styles.taskText, todaysLog[field] && styles.taskTextDone]}>{title}</Text>
+                    <Text style={[styles.taskText, (todaysLog[field] as any) && styles.taskTextDone]}>{title}</Text>
                 </View>
                 {streak !== undefined && streak > 0 && (
                     <View style={styles.miniStreak}>
@@ -122,15 +211,24 @@ export default function HomeScreen() {
                     </View>
                 )}
             </TouchableOpacity>
-            {renderLevelProgress(level, xp)}
+            {/* Level progress removed */}
         </View>
     );
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={{ flex: 1 }}>
+            <ScrollView style={styles.container} contentContainerStyle={styles.content}>
             <View style={styles.header}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                     <Image source={require('../../assets/icon.png')} style={{ width: 45, height: 45, resizeMode: 'contain' }} />
-                    <Text style={styles.date}>{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+                    <Text style={[styles.date, { flex: 1, textAlign: 'center' }]}>{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+                        <View style={{ alignItems: 'flex-end', marginLeft: theme.spacing.md }}>
+                            <Animated.Text style={[styles.date, { transform: [{ scale: creditScale }], fontSize: 14, color: theme.colors.primary }]}>{creditosDisponibles || 0} ✨</Animated.Text>
+                            {creditDeltaText && (
+                                <Animated.View style={{ marginTop: 4, transform: [{ translateY: deltaAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }], opacity: deltaAnim }}>
+                                    <View style={styles.deltaBadge}><Text style={styles.deltaText}>{creditDeltaText}</Text></View>
+                                </Animated.View>
+                            )}
+                        </View>
                 </View>
                 <Text style={styles.quote}>"{Quote}"</Text>
             </View>
@@ -157,22 +255,29 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                 </View>
                 <View style={{ marginTop: 16 }}>
-                    {renderLevelProgress(nivelAzucar, xpAzucar)}
+                        {/* level progress removed */}
                 </View>
             </View>
 
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>¿Cómo me siento hoy?</Text>
-                <View style={styles.emotionsContainer}>
-                    {emotions.map((e) => (
-                        <TouchableOpacity
-                            key={e.value}
-                            style={[styles.emotionBtn, todaysLog.emotion === e.value && styles.emotionBtnActive]}
-                            onPress={() => handleEmotionUpdate(e.value)}
-                        >
-                            <Text style={styles.emotionEmoji}>{e.emoji}</Text>
-                        </TouchableOpacity>
-                    ))}
+            {/* Boss card: Procrastinación (progreso de tareas = Caos Mental) */}
+            <View style={[styles.card, styles.bossCard]}> 
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={styles.cardTitle}>Caos Mental</Text>
+                    <Text style={styles.bossLabel}>HP BOSS: LA PROCRASTINACIÓN</Text>
+                </View>
+                <View style={{ marginTop: theme.spacing.sm }} />
+                <View
+                    style={styles.hpBarBg}
+                    onLayout={(ev) => {
+                        const w = ev.nativeEvent.layout.width;
+                        if (barWidth !== w) setBarWidth(w);
+                    }}
+                >
+                    <Animated.View style={[styles.hpBarFill, { width: animWidth }]} />
+                </View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: theme.spacing.sm }}>
+                    <Animated.Text style={[styles.bossPercent, { transform: [{ scale: scaleAnim }] }]}>{pct}%</Animated.Text>
+                    <Text style={{ ...theme.typography.caption, color: theme.colors.textLight }}>🔋 INVERSIÓN: 0%</Text>
                 </View>
             </View>
 
@@ -184,43 +289,118 @@ export default function HomeScreen() {
                         <View style={styles.planHeaderContainer}>
                             <View>
                                 <Text style={styles.planTitle}>Tu Plan de Hoy</Text>
-                                <View style={[styles.modeBadge, (styles as any)[`modeBadge_${todaysPlan.modo}`]]}>
-                                    <Zap color={(styles as any)[`modeText_${todaysPlan.modo}`]?.color || '#FFD700'} size={16} />
-                                    <Text style={[styles.modeText, (styles as any)[`modeText_${todaysPlan.modo}`]]}>
-                                        Modo: {todaysPlan.modo ? todaysPlan.modo.toUpperCase() : 'ESTÁNDAR'}
-                                    </Text>
-                                </View>
-                                {todaysPlan.focusOfTheDay && (
-                                    <View style={styles.focusBadge}>
-                                        <Target color={theme.colors.primary} size={14} />
-                                        <Text style={styles.focusText}>
-                                            Enfoque: {todaysPlan.focusOfTheDay}
-                                        </Text>
-                                    </View>
-                                )}
+                                {/* mode removed */}
                             </View>
-                            <View style={styles.disciplineContainer}>
-                                <Text style={styles.disciplineLabel}>Disciplina</Text>
-                                <Text style={styles.disciplineValue}>{nivelDisciplina}%</Text>
-                            </View>
+                            {/* discipline removed */}
+                            <TouchableOpacity style={styles.finalizeBtn} onPress={() => {
+                                const res = finalizeDay(todayStr);
+                                if (res.defeated) {
+                                    Alert.alert('¡Victoria!', `Derrotaste al Jefe. +${res.creditDelta} créditos`);
+                                } else {
+                                    Alert.alert('Día finalizado', `El Jefe sigue vivo (${res.hpRemaining} HP). Pierdes ${-res.creditDelta} créditos.`);
+                                }
+                            }}>
+                                <Text style={styles.finalizeBtnText}>Finalizar Día</Text>
+                            </TouchableOpacity>
                         </View>
 
-                        <View style={styles.planSection}>
-                            <Text style={styles.planSectionTitle}>Meta Anti-Azúcar</Text>
-                            <Text style={styles.planText}>{todaysPlan.sugarPlan}</Text>
-                            <View style={{ marginTop: 8 }}>
-                                {renderLevelProgress(nivelAzucar, xpAzucar)}
+                        {/* Didactic daily missions as cards */}
+                        <View style={styles.missionsContainer}>
+                            <View style={styles.missionCard}>
+                                <Text style={styles.missionLabel}>ENTRENAMIENTO</Text>
+                                <Text style={styles.missionText}>{todaysLog.trained ? 'Completado' : 'No completado'}</Text>
+                            </View>
+
+                            <View style={styles.missionCard}>
+                                <Text style={styles.missionLabel}>LECTURA</Text>
+                                {(() => {
+                                    // daily deterministic target between 5 and 20
+                                    const day = new Date(todayStr).getDate();
+                                    const target = Math.min(20, 5 + (day % 16));
+                                    const pagesToday = (studyLogs || []).filter(s => s.date === todayStr && s.type === 'reading')
+                                        .reduce((sum, s) => sum + (s.pagesRead || 0), 0);
+                                    return (
+                                        <>
+                                                            <Text style={styles.missionText}>Meta: {target} páginas</Text>
+                                                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: theme.spacing.sm }}>
+                                                                <TextInput
+                                                                    placeholder='Páginas leídas'
+                                                                    keyboardType='numeric'
+                                                                    value={pagesInput}
+                                                                    onChangeText={setPagesInput}
+                                                                    style={styles.pagesInput}
+                                                                />
+                                                                <AnimatedTouchable style={[styles.addButton, { transform: [{ scale: addBtnScale }] }]} onPress={handleAddPagesHome}>
+                                                                    <Text style={styles.addButtonText}>Añadir</Text>
+                                                                </AnimatedTouchable>
+                                                            </View>
+                                                            <Text style={[styles.missionSub, { color: theme.colors.primary, marginTop: theme.spacing.sm }]}>Llevas: {pagesToday} págs</Text>
+                                        </>
+                                    );
+                                })()}
+                            </View>
+
+                            <View style={styles.missionCard}>
+                                <Text style={styles.missionLabel}>ESTUDIO</Text>
+                                {(() => {
+                                    const totalFocus = (studyLogs || []).filter(s => s.date === todayStr && s.type === 'focus')
+                                        .reduce((sum, s) => sum + (s.timeMinutes || 0), 0);
+                                    // deterministic study task
+                                    const templates = [
+                                        'Estudiar {n} frases en inglés (verbos irregulares)',
+                                        'Practicar {n} tarjetas de vocabulario',
+                                        'Escuchar {n} minutos de podcast y anotar 5 palabras nuevas',
+                                        'Revisar {n} oraciones y traducir al español'
+                                    ];
+                                    const day = new Date(todayStr).getDate();
+                                    const idx = day % templates.length;
+                                    const n = 5 + (day % 16); // 5..20
+                                    const task = templates[idx].replace('{n}', String(n));
+                                    return (
+                                        <>
+                                            <Text style={styles.missionText}>{task}</Text>
+                                            <Text style={[styles.missionSub, { color: theme.colors.primary }]}>Sesión: {totalFocus} min</Text>
+                                            <TouchableOpacity
+                                                style={[styles.smallActionBtn, todaysLog.english && styles.smallActionBtnDone]}
+                                                onPress={() => {
+                                                    const newStatus = !todaysLog.english;
+                                                    // compute expected credit amount for showing in snack
+                                                    let amount = 0;
+                                                    if (newStatus && !todaysLog.english) {
+                                                        try {
+                                                            const plan = (dailyPlans && dailyPlans[todayStr]) || null;
+                                                            const modo: any = plan?.modo || 'estandar';
+                                                            const multipliers: Record<string, number> = { minimo: 0.5, estandar: 1, intenso: 1.5 };
+                                                            const mult = multipliers[modo] || 1;
+                                                            const baseEnglish = 50;
+                                                            amount = Math.round(baseEnglish * mult);
+                                                        } catch (e) { amount = 50; }
+                                                    }
+                                                    updateDailyLog(todayStr, { english: newStatus });
+                                                    if (newStatus && amount > 0) {
+                                                        showSnack(`+${amount} créditos por Estudio`);
+                                                    }
+                                                }}
+                                            >
+                                                <Text style={[styles.smallActionText]}>{todaysLog.english ? 'Completado' : 'Marcar como realizado'}</Text>
+                                            </TouchableOpacity>
+                                        </>
+                                    );
+                                })()}
                             </View>
                         </View>
-                        {renderTaskToggle(todaysPlan.fitnessPlan || 'Entrenar', 'trained', 'Fitness', nivelFitness, xpFitness, undefined)}
-                        {renderTaskToggle(todaysPlan.readingPlan || 'Leer', 'read', 'Lectura', nivelLectura, xpLectura, readingStreak)}
-                        {renderTaskToggle(todaysPlan.englishPlan || 'Inglés', 'english', 'Ingles', nivelIngles, xpIngles, englishStreak)}
-                        {renderTaskToggle(todaysPlan.pythonPlan || 'Python', 'python', 'Python', nivelPython, xpPython, pythonStreak)}
                     </>
                 )}
             </View>
 
-        </ScrollView>
+            </ScrollView>
+
+            {snackMsg && (
+                <Animated.View style={[styles.snack, { transform: [{ translateY: snackAnim }] }] }>
+                    <Text style={styles.snackText}>{snackMsg}</Text>
+                </Animated.View>
+            )}
+        </View>
     );
 }
 
@@ -364,6 +544,61 @@ const styles = StyleSheet.create({
         shadowRadius: 8,
         elevation: 2,
     },
+    bossCard: {
+        paddingVertical: theme.spacing.md,
+    },
+    bossLabel: {
+        ...theme.typography.caption,
+        color: theme.colors.textLight,
+        fontWeight: '700'
+    },
+    hpBarBg: {
+        height: 12,
+        backgroundColor: '#FEECEE',
+        borderRadius: 8,
+        overflow: 'hidden',
+    },
+    hpBarFill: {
+        height: '100%',
+        backgroundColor: '#F43F5E',
+    },
+    bossPercent: { ...theme.typography.caption, color: theme.colors.text, fontWeight: '700' },
+    missionsContainer: { marginTop: theme.spacing.md },
+    missionCard: { backgroundColor: '#FFF', padding: theme.spacing.md, borderRadius: theme.borderRadius.sm, marginBottom: theme.spacing.sm },
+    missionLabel: { ...theme.typography.caption, color: theme.colors.primary, fontWeight: '700', marginBottom: 6 },
+    missionText: { ...theme.typography.body, color: theme.colors.text },
+    missionSub: { ...theme.typography.caption, color: theme.colors.textLight, marginTop: 6 },
+    snack: {
+        position: 'absolute',
+        left: 16,
+        right: 16,
+        bottom: 24,
+        backgroundColor: '#111827',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 10,
+        shadowColor: '#000',
+        shadowOpacity: 0.2,
+        shadowRadius: 6,
+        elevation: 6,
+    },
+    snackText: { color: '#FFFFFF', textAlign: 'center', ...theme.typography.body },
+    deltaBadge: { backgroundColor: '#0EA5A4', paddingVertical: 6, paddingHorizontal: 8, borderRadius: 8 },
+    deltaText: { color: '#FFFFFF', fontWeight: '700' },
+    smallActionBtn: { marginTop: theme.spacing.sm, backgroundColor: '#F3F4F6', paddingVertical: 8, paddingHorizontal: 12, borderRadius: theme.borderRadius.sm, alignItems: 'center' },
+    smallActionBtnDone: { backgroundColor: theme.colors.success },
+    smallActionText: { color: theme.colors.text, fontWeight: '700' },
+    pagesInput: {
+        backgroundColor: '#FFF',
+        borderWidth: 1,
+        borderColor: '#EEE',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: theme.borderRadius.sm,
+        flex: 1,
+    },
+    addButton: { backgroundColor: theme.colors.primary, paddingVertical: 10, paddingHorizontal: 14, borderRadius: theme.borderRadius.sm, marginLeft: theme.spacing.sm },
+    addButtonText: { color: '#FFF', fontWeight: '700' },
     planHeaderContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -375,65 +610,17 @@ const styles = StyleSheet.create({
         color: theme.colors.text,
         marginBottom: theme.spacing.xs,
     },
-    modeBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
-        alignSelf: 'flex-start',
+    
+    finalizeBtn: {
+        marginTop: theme.spacing.sm,
+        backgroundColor: theme.colors.primary,
+        paddingVertical: theme.spacing.sm,
+        paddingHorizontal: theme.spacing.md,
+        borderRadius: theme.borderRadius.sm,
+        alignSelf: 'flex-end'
     },
-    modeBadge_minimo: {
-        backgroundColor: '#E0F2F1', // Light Teal
-    },
-    modeBadge_estandar: {
-        backgroundColor: '#FFFDE7', // Light Yellow
-    },
-    modeBadge_intenso: {
-        backgroundColor: '#FFEBEE', // Light Red
-    },
-    modeText: {
-        ...theme.typography.caption,
-        fontWeight: 'bold',
-        marginLeft: 4,
-    },
-    modeText_minimo: {
-        color: '#00796B', // Dark Teal
-    },
-    modeText_estandar: {
-        color: '#FBC02D', // Dark Yellow
-    },
-    modeText_intenso: {
-        color: '#D32F2F', // Dark Red
-    },
-    disciplineContainer: {
-        alignItems: 'flex-end',
-    },
-    focusBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 6,
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        backgroundColor: '#F0E6FF', // Light purple
-        borderRadius: 8,
-        alignSelf: 'flex-start',
-    },
-    focusText: {
-        ...theme.typography.caption,
-        color: theme.colors.primary,
-        fontWeight: 'bold',
-        marginLeft: 4,
-    },
-    disciplineLabel: {
-        ...theme.typography.caption,
-        color: theme.colors.textLight,
-    },
-    disciplineValue: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: theme.colors.primary, // Use primary color for discipline value
-    },
+    finalizeBtnText: { color: '#FFF', fontWeight: '700' },
+    
     planSection: {
         marginBottom: theme.spacing.sm,
         padding: theme.spacing.sm,

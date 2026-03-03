@@ -1,14 +1,14 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Home, Repeat, Dumbbell, BookOpen, TrendingUp, Library } from 'lucide-react-native';
+import { Home, Repeat, Dumbbell, BookOpen, TrendingUp, ShoppingCart, Gift } from 'lucide-react-native';
 import { theme } from '../styles/theme';
 
 import HomeScreen from '../screens/HomeScreen';
 import ReprogramacionScreen from '../screens/ReprogramacionScreen';
 import FitnessScreen from '../screens/FitnessScreen';
-import EstudioScreen from '../screens/EstudioScreen';
 import ProgresoScreen from '../screens/ProgresoScreen';
-import BibliotecaScreen from '../screens/BibliotecaScreen';
+import TiendaScreen from '../screens/TiendaScreen';
+import AccionesScreen from '../screens/AccionesScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -61,12 +61,21 @@ export default function TabNavigator() {
                     title: 'Fitness'
                 }}
             />
+            {/* Estudio tab removed — study tasks live in Home */}
             <Tab.Screen
-                name="Estudio"
-                component={EstudioScreen}
+                name="Acciones"
+                component={AccionesScreen}
                 options={{
-                    tabBarIcon: ({ color, size }) => <BookOpen color={color} size={size} />,
-                    title: 'Estudio'
+                    tabBarIcon: ({ color, size }) => <Gift color={color} size={size} />,
+                    title: 'Acciones'
+                }}
+            />
+            <Tab.Screen
+                name="Tienda"
+                component={TiendaScreen}
+                options={{
+                    tabBarIcon: ({ color, size }) => <ShoppingCart color={color} size={size} />,
+                    title: 'Tienda'
                 }}
             />
             <Tab.Screen
@@ -77,14 +86,7 @@ export default function TabNavigator() {
                     title: 'Progreso'
                 }}
             />
-            <Tab.Screen
-                name="Biblioteca"
-                component={BibliotecaScreen}
-                options={{
-                    tabBarIcon: ({ color, size }) => <Library color={color} size={size} />,
-                    title: 'Biblioteca'
-                }}
-            />
+            {/* Biblioteca screen removed per user request */}
         </Tab.Navigator>
     );
 }

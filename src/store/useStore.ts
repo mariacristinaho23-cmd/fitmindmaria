@@ -53,6 +53,7 @@ export interface WorkoutSession {
         reps: number;
         sets: number;
     }[];
+    remoteId?: string;
 }
 
 export interface WeightLog {
@@ -63,17 +64,16 @@ export interface WeightLog {
 export interface StudyLog {
     id: string;
     date: string;
-    type: 'reading' | 'english' | 'python';
+    type: 'reading' | 'english' | 'focus';
     timeMinutes: number;
     // Reading
     pagesRead?: number;
     // English
     practiceType?: 'listening' | 'speaking' | 'reading' | 'writing';
     newWords?: string;
-    // Python
-    topic?: string;
-    exerciseCompleted?: boolean;
+    // (python removed)
 }
+
 
 export interface DailyPlan {
     date: string;
@@ -81,9 +81,29 @@ export interface DailyPlan {
     sugarPlan: string;
     fitnessPlan: string;
     englishPlan: string;
-    pythonPlan: string;
     readingPlan: string;
-    focusOfTheDay?: string;
+}
+
+export interface CustomReward {
+    id: string;
+    title: string;
+    cost: number;
+}
+
+export interface Redemption {
+    id: string;
+    date: string; // ISO
+    title: string;
+    cost: number;
+}
+
+export interface BossEvent {
+    id: string;
+    date: string;
+    result: 'defeated' | 'alive';
+    change: number;
+    prevHp: number;
+    finalHp: number;
 }
 
 export interface DailyLog {
@@ -93,7 +113,7 @@ export interface DailyLog {
     trained: boolean;
     read: boolean;
     english: boolean;
-    python: boolean;
+    creditsGranted?: number;
 }
 
 interface AppState {
@@ -107,34 +127,30 @@ interface AppState {
     exerciseLibrary: ExerciseLibraryItem[];
     weightLogs: WeightLog[];
     studyLogs: StudyLog[];
+    customRewards: CustomReward[];
+    redemptionHistory: Redemption[];
+    dailyBosses: Record<string, number>;
+    bossEvents: BossEvent[];
     readingMonthlyGoal: number;
+    monthlyTrainingGoal: number;
     englishStreak: number;
-    pythonStreak: number;
-    nivelDisciplina: number;
-    // Progression V3
+    // Replace XP/Level system with credits
+    creditosDisponibles: number;
+    // Aura will be computed at runtime from dailyLogs
     nivelFitness: number;
     nivelIngles: number;
-    nivelPython: number;
     nivelLectura: number;
     nivelAzucar: number;
-    xpFitness: number;
-    xpIngles: number;
-    xpPython: number;
-    xpLectura: number;
-    xpAzucar: number;
-    lastLevelDropFitness: string | null;
-    lastLevelDropIngles: string | null;
-    lastLevelDropPython: string | null;
-    lastLevelDropLectura: string | null;
-    lastLevelDropAzucar: string | null;
     // Actions
     updateDailyLog: (date: string, updates: Partial<DailyLog>) => void;
     generateDailyPlan: (date: string) => void;
-    addXP: (domain: 'Fitness' | 'Ingles' | 'Python' | 'Lectura' | 'Azucar', amount: number) => void;
+    // XP removed; credits system replaces it
     addCraving: (craving: Omit<Craving, 'id'>) => void;
     addJournalEntry: (entry: Omit<JournalEntry, 'id'>) => void;
     addRoutine: (routine: Omit<Routine, 'id'>) => void;
     addWorkoutSession: (session: Omit<WorkoutSession, 'id'>) => void;
+    updateWorkoutSession: (session: WorkoutSession) => void;
+    removeWorkoutSession: (id: string) => void;
     setExerciseLibrary: (library: ExerciseLibraryItem[]) => void;
     addExerciseToLibrary: (item: Omit<ExerciseLibraryItem, 'id'>) => void;
     updateExerciseInLibrary: (id: string, updates: Partial<ExerciseLibraryItem>) => void;
@@ -142,6 +158,13 @@ interface AppState {
     addWeightLog: (log: WeightLog) => void;
     addStudyLog: (log: Omit<StudyLog, 'id'>) => void;
     setReadingGoal: (goal: number) => void;
+    setMonthlyTrainingGoal: (goal: number) => void;
+    addCredits: (amount: number) => void;
+    finalizeDay: (date?: string) => { defeated: boolean; hpRemaining: number; creditDelta: number };
+    canjearRecompensa: (cost: number) => boolean;
+    addCustomReward: (r: Omit<CustomReward, 'id'>) => void;
+    removeCustomReward: (id: string) => void;
+    redeemReward: (reward: { title: string; cost: number }) => boolean;
 }
 
 const getTodayDateStr = () => new Date().toISOString().split('T')[0];
@@ -181,7 +204,7 @@ export const calculateStreak = (dailyLogs: Record<string, DailyLog>, key: keyof 
 export const useStore = create<AppState>()(
     persist(
         (set, get) => ({
-            sugarFreeStreak: 0, // Kept for backwards compatibility with existing storage, unused
+            sugarFreeStreak: 0,
             dailyLogs: {},
             dailyPlans: {},
             cravings: [],
@@ -191,25 +214,18 @@ export const useStore = create<AppState>()(
             exerciseLibrary: [],
             weightLogs: [],
             studyLogs: [],
+            customRewards: [],
+            redemptionHistory: [],
             readingMonthlyGoal: 500,
-            englishStreak: 0, // Unused
-            pythonStreak: 0, // Unused
-            nivelDisciplina: 0,
+            monthlyTrainingGoal: 20,
+            englishStreak: 0,
+            
+            // Keep nivel* for plan generator (not used for XP)
             nivelFitness: 1,
             nivelIngles: 1,
-            nivelPython: 1,
             nivelLectura: 1,
             nivelAzucar: 1,
-            xpFitness: 0,
-            xpIngles: 0,
-            xpPython: 0,
-            xpLectura: 0,
-            xpAzucar: 0,
-            lastLevelDropFitness: null,
-            lastLevelDropIngles: null,
-            lastLevelDropPython: null,
-            lastLevelDropLectura: null,
-            lastLevelDropAzucar: null,
+            creditosDisponibles: 0,
 
             updateDailyLog: (date, updates) =>
                 set((state) => {
@@ -220,14 +236,48 @@ export const useStore = create<AppState>()(
                         trained: false,
                         read: false,
                         english: false,
-                        python: false,
+                        creditsGranted: 0,
                     };
-                    return {
+
+                    const newLog = { ...currentLog, ...updates } as DailyLog;
+
+                    // Calculate credits to grant based on newly completed tasks
+                    let granted = 0;
+                    const base: Record<string, number> = { trained: 150, read: 50, english: 50, sugarFree: 20 };
+
+                    const plan = state.dailyPlans[date];
+                    const modo: any = plan?.modo || 'estandar';
+                    const multipliers: Record<string, number> = { minimo: 0.5, estandar: 1, intenso: 1.5 };
+                    const mult = multipliers[modo] || 1;
+
+                    if (!currentLog.trained && newLog.trained) granted += Math.round(base.trained * mult);
+                    if (!currentLog.read && newLog.read) {
+                        // If there are explicit reading study logs (pages), we already award per-page credits elsewhere,
+                        // so avoid granting the lump-sum base read bonus to prevent double-counting.
+                        const totalPages = (state.studyLogs || []).filter(s => s.date === date && s.type === 'reading')
+                            .reduce((sum, s) => sum + (s.pagesRead || 0), 0);
+                        if (totalPages <= 0) {
+                            granted += Math.round(base.read * mult);
+                        }
+                    }
+                    if (!currentLog.english && newLog.english) granted += Math.round(base.english * mult);
+                    if (!currentLog.sugarFree && newLog.sugarFree) granted += Math.round(base.sugarFree * mult);
+
+                    const updatedCreditsGranted = (currentLog.creditsGranted || 0) + granted;
+
+                    const nextState: Partial<AppState> = {
                         dailyLogs: {
                             ...state.dailyLogs,
-                            [date]: { ...currentLog, ...updates },
+                            [date]: { ...newLog, creditsGranted: updatedCreditsGranted },
                         },
                     };
+
+                    if (granted > 0) {
+                        nextState.creditosDisponibles = (state.creditosDisponibles || 0) + granted;
+                        console.log(`Se han añadido ${granted} créditos por completar tareas de ${date}`);
+                    }
+
+                    return nextState as AppState;
                 }),
 
             generateDailyPlan: (date) => set((state) => {
@@ -242,8 +292,7 @@ export const useStore = create<AppState>()(
                 const sugarStreak = calculateStreak(logs, 'sugarFree');
                 const fitnessStreak = calculateStreak(logs, 'trained');
                 const englishStreak = calculateStreak(logs, 'english');
-                const pythonStreak = calculateStreak(logs, 'python');
-                const readingStreak = calculateStreak(logs, 'read');
+                    const readingStreak = calculateStreak(logs, 'read');
 
                 // Map emotion to energy: 'terrible'=1, 'bad'=2, 'neutral'=3, 'good'=4, 'great'=5. Default 3
                 let energiaHoy = 3;
@@ -258,7 +307,6 @@ export const useStore = create<AppState>()(
                     if (yesterdayLog.sugarFree) cumplimientoAyer++;
                     if (yesterdayLog.trained) cumplimientoAyer++;
                     if (yesterdayLog.english) cumplimientoAyer++;
-                    if (yesterdayLog.python) cumplimientoAyer++;
                     if (yesterdayLog.read) cumplimientoAyer++;
                 }
 
@@ -276,13 +324,13 @@ export const useStore = create<AppState>()(
                     rachaAzucar: sugarStreak,
                     rachaFitness: fitnessStreak,
                     rachaIngles: englishStreak,
-                    rachaPython: pythonStreak,
+                    // python removed from userState
                     rachaLectura: readingStreak,
                     cumplimientoAyer,
                     historialConsumoAzucar,
                     nivelFitness: state.nivelFitness || 1,
                     nivelIngles: state.nivelIngles || 1,
-                    nivelPython: state.nivelPython || 1,
+                    // nivelPython removed
                     nivelLectura: state.nivelLectura || 1,
                     nivelAzucar: state.nivelAzucar || 1,
                 };
@@ -295,74 +343,15 @@ export const useStore = create<AppState>()(
                     sugarPlan: adaptativeOutput.sugarPlan,
                     fitnessPlan: adaptativeOutput.fitnessPlan,
                     englishPlan: adaptativeOutput.englishPlan,
-                    pythonPlan: adaptativeOutput.pythonPlan,
                     readingPlan: adaptativeOutput.readingPlan,
-                    focusOfTheDay: adaptativeOutput.focusOfTheDay
                 };
 
                 return {
-                    nivelDisciplina: adaptativeOutput.nivelDisciplina,
                     dailyPlans: {
                         ...state.dailyPlans,
                         [date]: plan
                     }
                 };
-            }),
-
-            addXP: (domain, amount) => set((state) => {
-                const xpKey = `xp${domain}` as keyof AppState;
-                const levelKey = `nivel${domain}` as keyof AppState;
-                const dropKey = `lastLevelDrop${domain}` as keyof AppState;
-
-                const currentXP = (state[xpKey] as number) || 0;
-                const currentLevel = (state[levelKey] as number) || 1;
-
-                let newXP = currentXP + amount;
-                let newLevel = currentLevel;
-                let dropUpdate = {};
-
-                // Level Up Logic
-                if (newXP >= currentLevel * 20 && currentLevel < 10 && amount > 0) {
-                    newLevel = currentLevel + 1;
-                    newXP = 0; // Reset XP on level up
-                }
-
-                // Penalty Logic Let XP drop below 0 to denote level loss
-                if (newXP < 0 && amount < 0) {
-                    if (currentLevel > 1) {
-                        const lastDropDate = state[dropKey] as string | null;
-                        const todayStr = getTodayDateStr();
-
-                        let canDrop = true;
-                        if (lastDropDate) {
-                            const daysSinceDrop = (new Date(todayStr).getTime() - new Date(lastDropDate).getTime()) / (1000 * 3600 * 24);
-                            if (daysSinceDrop < 7) {
-                                canDrop = false; // Already dropped within 7 days
-                            }
-                        }
-
-                        if (canDrop) {
-                            newLevel = currentLevel - 1;
-                            newXP = 0; // Cap at 0 after dropping
-                            dropUpdate = { [dropKey]: todayStr };
-                        } else {
-                            newXP = 0; // Cannot drop, just hit floor 0
-                        }
-                    } else {
-                        newXP = 0; // Level 1 floor
-                    }
-                }
-
-                // If adding XP would exceed max level, cap it
-                if (newLevel === 10 && newXP > 0) {
-                    newXP = 0; // Mastered
-                }
-
-                return {
-                    [xpKey]: newXP,
-                    [levelKey]: newLevel,
-                    ...dropUpdate
-                } as Partial<AppState>;
             }),
 
             addCraving: (craving) => set((state) => ({
@@ -376,6 +365,12 @@ export const useStore = create<AppState>()(
             })),
             addWorkoutSession: (session) => set((state) => ({
                 workoutHistory: [{ ...session, id: Date.now().toString() }, ...(state.workoutHistory || [])]
+            })),
+            updateWorkoutSession: (session: WorkoutSession) => set((state) => ({
+                workoutHistory: (state.workoutHistory || []).map(w => w.id === session.id ? session : w)
+            })),
+            removeWorkoutSession: (id: string) => set((state) => ({
+                workoutHistory: (state.workoutHistory || []).filter(w => w.id !== id)
             })),
             setExerciseLibrary: (library) => set({ exerciseLibrary: library }),
             addExerciseToLibrary: (item) => set((state) => ({
@@ -395,10 +390,133 @@ export const useStore = create<AppState>()(
                 const filtered = (state.weightLogs || []).filter(w => w.date !== log.date);
                 return { weightLogs: [log, ...filtered].sort((a, b) => b.date.localeCompare(a.date)) };
             }),
-            addStudyLog: (log) => set((state) => ({
-                studyLogs: [{ ...log, id: Date.now().toString() }, ...(state.studyLogs || [])]
+            addStudyLog: (log) => {
+                set((state) => ({
+                    studyLogs: [{ ...log, id: Date.now().toString() }, ...(state.studyLogs || [])]
+                }));
+
+                try {
+                    const date = log.date;
+                    // If this is a reading log with pages, award 10 credits per page immediately
+                    if (log.type === 'reading' && (log.pagesRead || 0) > 0) {
+                        const amount = (log.pagesRead || 0) * 10;
+                        // use get() to avoid closure over stale addCredits
+                        try { get().addCredits(amount); } catch (e) {}
+                    }
+
+                    const all = (get().studyLogs || []).filter(s => s.date === date && s.type === 'reading');
+                    const totalPages = all.reduce((sum, s) => sum + (s.pagesRead || 0), 0);
+                    // Determine today's reading target (max 20 pages)
+                    const planText = get().dailyPlans?.[date]?.readingPlan || '';
+                    const m = String(planText).match(/(\d+)/);
+                    let target = m ? Math.min(20, parseInt(m[1], 10)) : null;
+                    if (!target) {
+                        const day = new Date(date).getDate();
+                        target = Math.min(20, 5 + (day % 16));
+                    }
+                    if (target && totalPages >= target) {
+                        // mark read as completed to grant any remaining credits via updateDailyLog
+                        get().updateDailyLog(date, { read: true });
+                    }
+                } catch (e) { }
+            },
+            addCustomReward: (r) => set((state) => ({
+                customRewards: [{ ...r, id: Date.now().toString() }, ...(state.customRewards || [])]
             })),
+            removeCustomReward: (id) => set((state) => ({
+                customRewards: (state.customRewards || []).filter(c => c.id !== id)
+            })),
+            redeemReward: (reward) => {
+                const current = get().creditosDisponibles || 0;
+                if (current >= reward.cost) {
+                    // deduct
+                    set({ creditosDisponibles: current - reward.cost });
+                    const now = new Date().toISOString();
+                    set((state) => ({
+                        redemptionHistory: [{ id: Date.now().toString(), date: now, title: reward.title, cost: reward.cost }, ...(state.redemptionHistory || [])]
+                    }));
+                    return true;
+                }
+                return false;
+            },
+            // Finalize day mechanics and boss system
+            dailyBosses: {},
+            bossEvents: [],
+            addCredits: (amount) => set((state) => {
+                const today = getTodayDateStr();
+                const prevCredits = state.creditosDisponibles || 0;
+                const nextCredits = prevCredits + amount;
+
+                // apply damage to today's boss (1 credit = 1 HP)
+                const prevHp = (state.dailyBosses && state.dailyBosses[today]) ?? 1000;
+                const finalHp = Math.max(0, prevHp - amount);
+
+                const nextState: Partial<AppState> = {
+                    creditosDisponibles: nextCredits,
+                    dailyBosses: { ...(state.dailyBosses || {}), [today]: finalHp }
+                };
+
+                // if boss just died, record event (finalization still gives bonus)
+                if (prevHp > 0 && finalHp === 0) {
+                    const ev: BossEvent = { id: Date.now().toString(), date: today, result: 'defeated', change: 0, prevHp, finalHp };
+                    nextState.bossEvents = [ev, ...(state.bossEvents || [])];
+                }
+
+                return nextState as AppState;
+            }),
+            finalizeDay: (date) => {
+                const d = date || getTodayDateStr();
+                // determine today's plan and tasks
+                const plan = get().dailyPlans?.[d] || null;
+                const tasks = ['trained', 'read', 'english'];
+                let total = 0, done = 0;
+                if (plan) {
+                    if (plan.fitnessPlan) total++;
+                    if (plan.readingPlan) total++;
+                    if (plan.englishPlan) total++;
+                }
+                const todayLog = get().dailyLogs?.[d];
+                if (!todayLog) {
+                    // nothing done
+                    total = Math.max(1, total);
+                } else {
+                    if (todayLog.trained) done++;
+                    if (todayLog.read) done++;
+                    if (todayLog.english) done++;
+                }
+
+                if (total === 0) total = 1;
+                const auraPercent = Math.round((done / total) * 100);
+
+                if (auraPercent === 100) {
+                    // reward 100 credits
+                    const current = get().creditosDisponibles || 0;
+                    const bonus = 100;
+                    set({ creditosDisponibles: current + bonus });
+                    const ev: BossEvent = { id: Date.now().toString(), date: d, result: 'defeated', change: bonus, prevHp: 0, finalHp: 0 };
+                    set((state) => ({ bossEvents: [ev, ...(state.bossEvents || [])] }));
+                    return { defeated: true, hpRemaining: auraPercent, creditDelta: bonus };
+                } else {
+                    // penalty -300 credits
+                    const current = get().creditosDisponibles || 0;
+                    const loss = Math.min(300, current);
+                    set({ creditosDisponibles: current - loss });
+                    const ev: BossEvent = { id: Date.now().toString(), date: d, result: 'alive', change: -loss, prevHp: auraPercent, finalHp: auraPercent };
+                    set((state) => ({ bossEvents: [ev, ...(state.bossEvents || [])] }));
+                    return { defeated: false, hpRemaining: auraPercent, creditDelta: -loss };
+                }
+            },
             setReadingGoal: (goal) => set({ readingMonthlyGoal: goal }),
+            setMonthlyTrainingGoal: (goal) => set({ monthlyTrainingGoal: goal }),
+            
+            canjearRecompensa: (cost) => {
+                const current = get().creditosDisponibles || 0;
+                if (current >= cost) {
+                    set({ creditosDisponibles: current - cost });
+                    return true;
+                }
+                return false;
+            },
         }),
         {
             name: 'habit-app-storage',

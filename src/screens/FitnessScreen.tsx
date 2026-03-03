@@ -1,27 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Image, Modal, Pressable } from 'react-native';
 import { theme } from '../styles/theme';
 import { useStore, ExerciseLibraryItem } from '../store/useStore';
-import { createWorkout, fetchExercises, saveExercise, deleteExercise as deleteExerciseDb } from '../lib/workouts';
+import { createWorkout, createWorkoutFull, updateWorkoutFull, deleteWorkoutFull, fetchExercises, saveExercise, deleteExercise as deleteExerciseDb } from '../lib/workouts';
 import { Plus, Check, Camera, Dumbbell, X, Trash2 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function FitnessScreen() {
-    const { routines, addRoutine, workoutHistory, addWorkoutSession, weightLogs, addWeightLog, updateDailyLog, exerciseLibrary, setExerciseLibrary, addExerciseToLibrary, updateExerciseInLibrary, removeExerciseFromLibrary } = useStore();
+    const { workoutHistory, addWorkoutSession, updateWorkoutSession, removeWorkoutSession, weightLogs, addWeightLog, updateDailyLog, exerciseLibrary, setExerciseLibrary, addExerciseToLibrary, updateExerciseInLibrary, removeExerciseFromLibrary, dailyLogs, dailyPlans } = useStore();
 
-    const [activeTab, setActiveTab] = useState<'rutinas' | 'biblioteca' | 'registrar'>('rutinas');
+    const [activeTab, setActiveTab] = useState<'hoy' | 'biblioteca'>('hoy');
 
-    // New Routine State
-    const [routineName, setRoutineName] = useState('');
-    const [exName, setExName] = useState('');
-    const [exWeight, setExWeight] = useState('');
-    const [exReps, setExReps] = useState('');
-    const [exSets, setExSets] = useState('');
-    const [tempExercises, setTempExercises] = useState<any[]>([]);
-
-    // Log Workout State (Simple)
-    const [selectedRoutine, setSelectedRoutine] = useState<string>('');
-    const [duration, setDuration] = useState('');
+    
 
     // Weight State
     const [currentWeight, setCurrentWeight] = useState('');
@@ -32,10 +22,7 @@ export default function FitnessScreen() {
     const [libImage, setLibImage] = useState<string | null>(null);
     const [editingExercise, setEditingExercise] = useState<ExerciseLibraryItem | null>(null);
 
-    // Advanced Workout Logging State
-    const [advDuration, setAdvDuration] = useState('');
-    const [advRoutineName, setAdvRoutineName] = useState('');
-    const [advExercises, setAdvExercises] = useState<{ exerciseId: string; weight: string; reps: string; sets: string }[]>([]);
+    
 
     useEffect(() => {
         if (activeTab === 'biblioteca') {
@@ -57,56 +44,7 @@ export default function FitnessScreen() {
         }
     };
 
-    const handleAddExercise = () => {
-        if (!exName || !exWeight || !exReps || !exSets) {
-            Alert.alert("Faltan datos", "Completa nombre, peso, series y repeticiones.");
-            return;
-        }
-        setTempExercises([...tempExercises, {
-            id: Date.now().toString(),
-            name: exName,
-            weight: parseFloat(exWeight),
-            reps: parseInt(exReps),
-            sets: parseInt(exSets)
-        }]);
-        setExName(''); setExWeight(''); setExReps(''); setExSets('');
-    };
-
-    const handleSaveRoutine = () => {
-        if (!routineName || tempExercises.length === 0) {
-            Alert.alert("Faltan datos", "Asigna un nombre a la rutina y agrega al menos un ejercicio.");
-            return;
-        }
-        addRoutine({ name: routineName, exercises: tempExercises });
-        setRoutineName('');
-        setTempExercises([]);
-        Alert.alert("Éxito", "Rutina guardada correctamente");
-    };
-
-    const handleLogWorkout = async () => {
-        if (!selectedRoutine || !duration) {
-            Alert.alert("Faltan datos", "Selecciona una rutina y especifica la duración.");
-            return;
-        }
-        const todayStr = new Date().toISOString().split('T')[0];
-        addWorkoutSession({
-            date: todayStr,
-            routineName: selectedRoutine,
-            durationMinutes: parseInt(duration)
-        });
-        updateDailyLog(todayStr, { trained: true });
-
-        // Try saving to Supabase
-        const { data, error } = await createWorkout(todayStr, selectedRoutine, parseInt(duration));
-        if (error) {
-            console.error("Error saving to Supabase:", error);
-            // We do not alert the user here as local save succeeded, but we could if strict sync is needed
-        }
-
-        setDuration('');
-        setSelectedRoutine('');
-        Alert.alert("¡Excelente trabajo!", "Entrenamiento registrado.");
-    };
+    
 
     const handleLogWeight = () => {
         if (!currentWeight) {
@@ -175,7 +113,7 @@ export default function FitnessScreen() {
         const { error } = await saveExercise(exerciseData);
 
         if (error) {
-            Alert.alert("Error", error.message || JSON.stringify(error));
+            Alert.alert("Error", (error as any)?.message || JSON.stringify(error));
             return;
         }
 
@@ -227,53 +165,134 @@ export default function FitnessScreen() {
         );
     };
 
-    const handleAddAdvExercise = (exerciseId: string) => {
-        if (advExercises.find(a => a.exerciseId === exerciseId)) {
-            setAdvExercises(advExercises.filter(a => a.exerciseId !== exerciseId));
-        } else {
-            setAdvExercises([...advExercises, { exerciseId, weight: '', reps: '', sets: '' }]);
-        }
+    // Today's session helpers (Registro de Entrenamiento Diario)
+    const [todaysExercises, setTodaysExercises] = useState<{ exerciseId: string; name: string; weight: string; reps: string; sets: string }[]>([]);
+    const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+    const [showMuscleModal, setShowMuscleModal] = useState(false);
+    const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
+    const [showSessionModal, setShowSessionModal] = useState(false);
+    const [sessionToView, setSessionToView] = useState<any>(null);
+
+    const handleAddExerciseToToday = (ex: ExerciseLibraryItem) => {
+        if (todaysExercises.find(e => e.exerciseId === ex.id)) return;
+        setTodaysExercises([...todaysExercises, { exerciseId: ex.id, name: ex.name, weight: '', reps: '', sets: '' }]);
     };
 
-    const handleUpdateAdvExercise = (exerciseId: string, field: 'weight' | 'reps' | 'sets', value: string) => {
-        setAdvExercises(advExercises.map(e => e.exerciseId === exerciseId ? { ...e, [field]: value } : e));
+    const handleUpdateTodayExercise = (exerciseId: string, field: 'weight' | 'reps' | 'sets', value: string) => {
+        setTodaysExercises(todaysExercises.map(e => e.exerciseId === exerciseId ? { ...e, [field]: value } : e));
     };
 
-    const handleSaveAdvWorkout = async () => {
-        if (!advDuration) {
-            Alert.alert("Error", "Debes ingresar al menos la duración.");
+    const handleRemoveTodayExercise = (exerciseId: string) => {
+        setTodaysExercises(todaysExercises.filter(e => e.exerciseId !== exerciseId));
+    };
+
+    // Session modal view handlers
+    const closeSessionModal = () => {
+        setShowSessionModal(false);
+        setSessionToView(null);
+    };
+
+    const handleSaveTodaysSession = async () => {
+        if (todaysExercises.length === 0) {
+            Alert.alert('Nada para guardar', 'Agrega al menos un ejercicio para registrar el entrenamiento de hoy.');
             return;
         }
 
-        const validExs = advExercises.filter(e => e.weight && e.reps && e.sets).map(e => ({
-            exerciseId: e.exerciseId,
-            weight: parseFloat(e.weight),
-            reps: parseInt(e.reps),
-            sets: parseInt(e.sets)
-        }));
-
+        const validExs = todaysExercises.map(e => ({ exerciseId: e.exerciseId, weight: parseFloat(e.weight) || 0, reps: parseInt(e.reps) || 0, sets: parseInt(e.sets) || 0 }));
         const todayStr = new Date().toISOString().split('T')[0];
-        const routineName = advRoutineName || "Entrenamiento Libre";
 
-        // Save locally
-        addWorkoutSession({
-            date: todayStr,
-            routineName: routineName,
-            durationMinutes: parseInt(advDuration),
-            exercises: validExs
-        });
-        updateDailyLog(todayStr, { trained: true });
+        let localId: string | null = null;
 
-        // Try saving to Supabase
-        const { data, error } = await createWorkout(todayStr, routineName, parseInt(advDuration));
-        if (error) {
-            console.error("Error saving to Supabase:", error);
-            // We do not alert the user here as local save succeeded, but we could if strict sync is needed
+        if (editingSessionId) {
+            // update local
+            updateWorkoutSession({ id: editingSessionId, date: todayStr, routineName: 'Entrenamiento de Hoy', durationMinutes: 0, exercises: validExs });
+            localId = editingSessionId;
+        } else {
+            addWorkoutSession({ date: todayStr, routineName: 'Entrenamiento de Hoy', durationMinutes: 0, exercises: validExs });
+            localId = (Date.now()).toString(); // best-effort placeholder; the store's addWorkoutSession generates its own id
         }
 
-        setAdvDuration(''); setAdvRoutineName(''); setAdvExercises([]);
-        Alert.alert("¡Excelente!", "Entrenamiento registrado.");
+        // Determine if we are marking trained for the first time (avoid duplicate messaging)
+        const wasTrained = !!dailyLogs?.[todayStr]?.trained;
+
+        updateDailyLog(todayStr, { trained: true });
+
+        // Compute expected credit amount (mirror logic from store:updateDailyLog) for user feedback
+        if (!wasTrained) {
+            try {
+                const plan = (dailyPlans && dailyPlans[todayStr]) || null;
+                const modo: any = plan?.modo || 'estandar';
+                const multipliers: Record<string, number> = { minimo: 0.5, estandar: 1, intenso: 1.5 };
+                const mult = multipliers[modo] || 1;
+                const baseTrained = 150;
+                const amount = Math.round(baseTrained * mult);
+                Alert.alert('Guardado', `Entrenamiento del día guardado en historial. +${amount} créditos`);
+            } catch (e) {
+                Alert.alert('Guardado', 'Entrenamiento del día guardado en historial.');
+            }
+        } else {
+            Alert.alert('Guardado', 'Entrenamiento del día actualizado en historial.');
+        }
+
+        // Try syncing exercises and workout to Supabase
+        try {
+            // If editing a session that has a remoteId, use it
+            let remoteId: string | undefined;
+            if (editingSessionId) {
+                const localSession = (workoutHistory || []).find(w => w.id === editingSessionId);
+                remoteId = localSession?.remoteId;
+            }
+
+            if (remoteId) {
+                await updateWorkoutFull(remoteId, todayStr, 'Entrenamiento de Hoy', 0, validExs);
+            } else {
+                const res = await createWorkoutFull(todayStr, 'Entrenamiento de Hoy', 0, validExs);
+                if (res && res.data && res.data.id) {
+                    // update local session to store remoteId
+                    const createdRemoteId = res.data.id;
+                    // find the recently added local session by date/name — prefer editingSessionId if present
+                    const targetLocal = editingSessionId ? (workoutHistory || []).find(w => w.id === editingSessionId) : (workoutHistory || []).find(w => w.date === todayStr && w.routineName === 'Entrenamiento de Hoy');
+                    if (targetLocal) {
+                        updateWorkoutSession({ ...targetLocal, remoteId: createdRemoteId });
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Error syncing workout full:', err);
+        }
+
+        setTodaysExercises([]);
+        setEditingSessionId(null);
+        Alert.alert('Guardado', 'Entrenamiento del día guardado en historial.');
     };
+
+    const openSessionModal = (session: any) => {
+        setSessionToView(session);
+        setShowSessionModal(true);
+    };
+
+    const handleDeleteSession = (sessionId: string) => {
+        Alert.alert('Eliminar sesión', '¿Deseas eliminar esta sesión?', [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Eliminar', style: 'destructive', onPress: async () => {
+                const s = (workoutHistory || []).find(w => w.id === sessionId);
+                if (s?.remoteId) {
+                    try {
+                        await deleteWorkoutFull(s.remoteId);
+                    } catch (e) {
+                        console.error('Error deleting remote workout:', e);
+                    }
+                }
+                removeWorkoutSession(sessionId);
+                if (sessionToView?.id === sessionId) {
+                    setSessionToView(null);
+                    setShowSessionModal(false);
+                }
+            } }
+        ]);
+    };
+
+    
 
     const getRecentHistoryForLibraryEx = (exId: string) => {
         for (let w of workoutHistory) {
@@ -290,23 +309,19 @@ export default function FitnessScreen() {
     return (
         <View style={styles.container}>
             <View style={styles.tabsRow}>
-                <TouchableOpacity onPress={() => setActiveTab('rutinas')} style={[styles.tabBtn, activeTab === 'rutinas' && styles.tabBtnActive]}>
-                    <Dumbbell size={20} color={activeTab === 'rutinas' ? theme.colors.primary : theme.colors.textLight} />
-                    <Text style={[styles.tabBtnText, activeTab === 'rutinas' && styles.tabBtnTextActive]}>Rutinas</Text>
+                <TouchableOpacity onPress={() => setActiveTab('hoy')} style={[styles.tabBtn, activeTab === 'hoy' && styles.tabBtnActive]}>
+                    <Dumbbell size={20} color={activeTab === 'hoy' ? theme.colors.primary : theme.colors.textLight} />
+                    <Text style={[styles.tabBtnText, activeTab === 'hoy' && styles.tabBtnTextActive]}>Entrenamiento de Hoy</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setActiveTab('biblioteca')} style={[styles.tabBtn, activeTab === 'biblioteca' && styles.tabBtnActive]}>
                     <Plus size={20} color={activeTab === 'biblioteca' ? theme.colors.primary : theme.colors.textLight} />
                     <Text style={[styles.tabBtnText, activeTab === 'biblioteca' && styles.tabBtnTextActive]}>Biblioteca</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => setActiveTab('registrar')} style={[styles.tabBtn, activeTab === 'registrar' && styles.tabBtnActive]}>
-                    <Check size={20} color={activeTab === 'registrar' ? theme.colors.primary : theme.colors.textLight} />
-                    <Text style={[styles.tabBtnText, activeTab === 'registrar' && styles.tabBtnTextActive]}>Registrar</Text>
-                </TouchableOpacity>
             </View>
 
             <ScrollView contentContainerStyle={styles.content}>
 
-                {activeTab === 'rutinas' && (
+                {activeTab === 'hoy' && (
                     <>
                         {/* Weight Tracking */}
                         <View style={styles.card}>
@@ -328,79 +343,118 @@ export default function FitnessScreen() {
                             )}
                         </View>
 
-                        {/* Create Routine */}
+                        {/* Historial Reciente: editar / eliminar sesiones */}
                         <View style={styles.card}>
-                            <Text style={styles.cardTitle}>Crear Nueva Rutina Simple</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Nombre de la rutina (ej. Pierna y Glúteo)"
-                                value={routineName}
-                                onChangeText={setRoutineName}
-                            />
-
-                            <View style={styles.exerciseForm}>
-                                <Text style={styles.label}>Agregar Ejercicio:</Text>
-
-                                {exerciseLibrary && exerciseLibrary.length > 0 && (
-                                    <>
-                                        <Text style={[styles.subtext, { marginBottom: 5 }]}>O elige desde tu biblioteca:</Text>
-                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                                            {exerciseLibrary.map(ex => {
-                                                const isSelected = exName === ex.name;
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={ex.id}
-                                                        style={[styles.libraryChip, isSelected && styles.libraryChipActive]}
-                                                        onPress={() => setExName(ex.name)}
-                                                    >
-                                                        <Text style={[styles.libraryChipText, isSelected && styles.libraryChipTextActive]}>{ex.name}</Text>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </ScrollView>
-                                    </>
-                                )}
-
-                                <TextInput style={styles.input} placeholder="Nombre (ej. Sentadilla)" value={exName} onChangeText={setExName} />
-                                <View style={styles.row}>
-                                    <TextInput style={[styles.input, { flex: 1 }]} placeholder="Peso (kg)" keyboardType="numeric" value={exWeight} onChangeText={setExWeight} />
-                                    <View style={{ width: 10 }} />
-                                    <TextInput style={[styles.input, { flex: 1 }]} placeholder="Series" keyboardType="numeric" value={exSets} onChangeText={setExSets} />
-                                    <View style={{ width: 10 }} />
-                                    <TextInput style={[styles.input, { flex: 1 }]} placeholder="Reps" keyboardType="numeric" value={exReps} onChangeText={setExReps} />
-                                </View>
-                                <TouchableOpacity style={styles.outlineBtn} onPress={handleAddExercise}>
-                                    <Plus color={theme.colors.primary} size={20} />
-                                    <Text style={styles.outlineBtnText}>Agregar a la rutina</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            {tempExercises.length > 0 && (
-                                <View style={styles.tempList}>
-                                    {tempExercises.map((ex, i) => (
-                                        <Text key={i} style={styles.historyText}>• {ex.name} - {ex.sets}x{ex.reps} ({ex.weight}kg)</Text>
-                                    ))}
-                                </View>
-                            )}
-
-                            <TouchableOpacity style={styles.submitBtn} onPress={handleSaveRoutine}>
-                                <Text style={styles.submitBtnText}>Guardar Rutina Completa</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* History */}
-                        <View style={styles.card}>
-                            <Text style={styles.cardTitle}>Historial Histórico</Text>
-                            {workoutHistory.slice(0, 5).map(w => (
-                                <View key={w.id} style={styles.historyItem}>
-                                    <Text style={styles.historyDate}>{w.date}</Text>
-                                    <Text style={styles.historyText}>Rutina: {w.routineName} ({w.durationMinutes} min)</Text>
+                            <Text style={styles.cardTitle}>Historial Reciente</Text>
+                            {(workoutHistory || []).slice(0, 7).map(w => (
+                                <View key={w.id} style={[styles.historyItem, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+                                    <TouchableOpacity style={{ flex: 1 }} onPress={() => openSessionModal(w)}>
+                                        <Text style={styles.historyDate}>{w.date}</Text>
+                                        <Text style={styles.historyText}>{w.routineName} — {w.exercises ? w.exercises.length + ' ejercicios' : ''}</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={[styles.smallOutlineBtn, { borderColor: theme.colors.error }]} onPress={() => handleDeleteSession(w.id)}>
+                                        <Text style={[styles.outlineBtnText, { color: theme.colors.error }]}>Eliminar</Text>
+                                    </TouchableOpacity>
                                 </View>
                             ))}
-                            {workoutHistory.length === 0 && <Text style={styles.subtext}>Aún no hay entrenamientos registrados.</Text>}
+                            {(workoutHistory || []).length === 0 && <Text style={styles.subtext}>Aún no hay entrenamientos registrados.</Text>}
+                        </View>
+                        {/* Entrenamiento de Hoy */}
+                        <View style={styles.card}>
+                            <Text style={styles.cardTitle}>Entrenamiento de Hoy</Text>
+
+                                <Text style={[styles.label, { marginBottom: 8 }]}>Seleccionar por grupo muscular:</Text>
+                                {(exerciseLibrary || []).length === 0 && (
+                                    <Text style={styles.subtext}>Agrega ejercicios en la Biblioteca primero.</Text>
+                                )}
+
+                                <View style={{ marginBottom: 12 }}>
+                                    <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowMuscleModal(true)}>
+                                        <Text style={styles.outlineBtnText}>{selectedMuscle ? `Grupo: ${selectedMuscle}` : 'Seleccionar Grupo Muscular'}</Text>
+                                    </TouchableOpacity>
+
+                                    <Modal visible={showMuscleModal} animationType='slide' transparent={true}>
+                                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center' }}>
+                                            <View style={{ backgroundColor: theme.colors.surface, margin: 20, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, maxHeight: '70%' }}>
+                                                <Text style={[styles.cardTitle, { marginBottom: 8 }]}>Seleccionar Grupo</Text>
+                                                <ScrollView>
+                                                    {Array.from(new Set((exerciseLibrary || []).map(e => (e.muscleGroup || 'Otros').trim()))).map(group => (
+                                                        <Pressable key={group} onPress={() => { setSelectedMuscle(group); setShowMuscleModal(false); }} style={{ paddingVertical: 12 }}>
+                                                            <Text style={[styles.label, { color: theme.colors.text }]}>{group || 'Otros'}</Text>
+                                                        </Pressable>
+                                                    ))}
+                                                </ScrollView>
+                                                <TouchableOpacity style={[styles.outlineBtn, { marginTop: theme.spacing.md }]} onPress={() => { setSelectedMuscle(null); setShowMuscleModal(false); }}>
+                                                    <Text style={styles.outlineBtnText}>Cancelar</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
+                                    </Modal>
+
+                                    {/* List exercises for selected muscle */}
+                                    {selectedMuscle && (
+                                    <View style={{ marginTop: 8 }}>
+                                        {(exerciseLibrary || []).filter(ex => ((ex.muscleGroup || 'Otros').trim() === selectedMuscle)).map(ex => (
+                                            <View key={ex.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}>
+                                                <Text style={{ flex: 1, paddingRight: 12, ...styles.libName }}>{ex.name}</Text>
+                                                <TouchableOpacity style={styles.smallOutlineBtn} onPress={() => handleAddExerciseToToday(ex)}>
+                                                    <Text style={styles.outlineBtnText}>Agregar</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        ))}
+                                    </View>
+                                )}
+                                </View>
+
+                            {todaysExercises.length > 0 && (
+                                <View style={{ marginTop: 8 }}>
+                                    {todaysExercises.map(ex => (
+                                        <View key={ex.exerciseId} style={[styles.advExRow, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                                            <Text style={{ flex: 1, ...styles.advExName }}>{ex.name}</Text>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                <TextInput value={ex.weight} onChangeText={v => handleUpdateTodayExercise(ex.exerciseId, 'weight', v)} placeholder='Peso' keyboardType='numeric' style={[styles.smallInput, { width: 80 }]} />
+                                                <TextInput value={ex.sets} onChangeText={v => handleUpdateTodayExercise(ex.exerciseId, 'sets', v)} placeholder='Series' keyboardType='numeric' style={[styles.smallInput, { width: 70, marginLeft: 8 }]} />
+                                                <TextInput value={ex.reps} onChangeText={v => handleUpdateTodayExercise(ex.exerciseId, 'reps', v)} placeholder='Reps' keyboardType='numeric' style={[styles.smallInput, { width: 70, marginLeft: 8 }]} />
+                                                <TouchableOpacity onPress={() => handleRemoveTodayExercise(ex.exerciseId)} style={{ marginLeft: 8 }}>
+                                                    <Trash2 color={theme.colors.error} size={18} />
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
+                                    ))}
+
+                                    {editingSessionId && (
+                                        <Text style={[styles.subtext, { marginBottom: 8, color: theme.colors.primary }]}>Editando sesión guardada</Text>
+                                    )}
+                                    <TouchableOpacity style={[styles.submitBtn, { marginTop: 12 }]} onPress={handleSaveTodaysSession}>
+                                        <Text style={styles.submitBtnText}>{editingSessionId ? 'Guardar Cambios' : 'Guardar Entrenamiento del Día'}</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
                         </View>
                     </>
                 )}
+
+                {/* Session viewer modal */}
+                <Modal visible={showSessionModal} animationType='slide' transparent={true}>
+                    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center' }}>
+                        <View style={{ backgroundColor: theme.colors.surface, margin: 20, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, maxHeight: '80%' }}>
+                            <Text style={styles.cardTitle}>Detalle de Sesión</Text>
+                            <Text style={styles.subtext}>{sessionToView?.date} — {sessionToView?.routineName}</Text>
+                            <ScrollView style={{ marginTop: 12 }}>
+                                {(sessionToView?.exercises || []).map((e: any, i: number) => (
+                                    <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}>
+                                        <Text style={{ flex: 1 }}>{(exerciseLibrary || []).find(x => x.id === e.exerciseId)?.name || e.exerciseId}</Text>
+                                        <Text style={{ marginLeft: 12 }}>{e.sets}x{e.reps} @ {e.weight}kg</Text>
+                                    </View>
+                                ))}
+                            </ScrollView>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: theme.spacing.md }}>
+                                <TouchableOpacity style={styles.outlineBtn} onPress={closeSessionModal}><Text style={styles.outlineBtnText}>Cerrar</Text></TouchableOpacity>
+                                <TouchableOpacity style={[styles.outlineBtn, { borderColor: theme.colors.error }]} onPress={() => handleDeleteSession(sessionToView?.id)}><Text style={[styles.outlineBtnText, { color: theme.colors.error }]}>Eliminar</Text></TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </Modal>
 
                 {activeTab === 'biblioteca' && (
                     <>
@@ -492,68 +546,7 @@ export default function FitnessScreen() {
                     </>
                 )}
 
-                {activeTab === 'registrar' && (
-                    <>
-                        <View style={styles.card}>
-                            <Text style={styles.cardTitle}>Entrenamiento Libre y Avanzado</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Duración Total (Minutos)"
-                                keyboardType="numeric"
-                                value={advDuration}
-                                onChangeText={setAdvDuration}
-                            />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Nombre Sesión (Opcional, ej: Pecho)"
-                                value={advRoutineName}
-                                onChangeText={setAdvRoutineName}
-                            />
-
-                            <Text style={[styles.label, { marginBottom: 10 }]}>Elige ejercicios (Tap para seleccionar):</Text>
-
-                            {(exerciseLibrary || []).length === 0 && (
-                                <Text style={styles.subtext}>Ve a la biblioteca a agregar ejercicios primero.</Text>
-                            )}
-
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
-                                {(exerciseLibrary || []).map(ex => {
-                                    const isSelected = !!advExercises.find(a => a.exerciseId === ex.id);
-                                    return (
-                                        <TouchableOpacity
-                                            key={ex.id}
-                                            style={[styles.libraryChip, isSelected && styles.libraryChipActive]}
-                                            onPress={() => handleAddAdvExercise(ex.id)}
-                                        >
-                                            <Text style={[styles.libraryChipText, isSelected && styles.libraryChipTextActive]}>{ex.name}</Text>
-                                        </TouchableOpacity>
-                                    );
-                                })}
-                            </ScrollView>
-
-                            {advExercises.length > 0 && (
-                                <View style={styles.advFormList}>
-                                    {advExercises.map(advEx => {
-                                        const originalEx = (exerciseLibrary || []).find(e => e.id === advEx.exerciseId);
-                                        return (
-                                            <View key={advEx.exerciseId} style={styles.advExRow}>
-                                                <Text style={styles.advExName}>{originalEx?.name}</Text>
-                                                <View style={styles.advExInputs}>
-                                                    <TextInput style={styles.smallInput} placeholder="Peso(kg)" keyboardType="numeric" value={advEx.weight} onChangeText={v => handleUpdateAdvExercise(advEx.exerciseId, 'weight', v)} />
-                                                    <TextInput style={styles.smallInput} placeholder="Series" keyboardType="numeric" value={advEx.sets} onChangeText={v => handleUpdateAdvExercise(advEx.exerciseId, 'sets', v)} />
-                                                    <TextInput style={styles.smallInput} placeholder="Reps" keyboardType="numeric" value={advEx.reps} onChangeText={v => handleUpdateAdvExercise(advEx.exerciseId, 'reps', v)} />
-                                                </View>
-                                            </View>
-                                        );
-                                    })}
-                                    <TouchableOpacity style={styles.submitBtn} onPress={handleSaveAdvWorkout}>
-                                        <Text style={styles.submitBtnText}>Finalizar y Loggear</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-                        </View>
-                    </>
-                )}
+                
 
             </ScrollView>
         </View>
@@ -607,4 +600,6 @@ const styles = StyleSheet.create({
     advExName: { ...theme.typography.body, fontWeight: '600', color: theme.colors.text, marginBottom: 5 },
     advExInputs: { flexDirection: 'row', justifyContent: 'space-between' },
     smallInput: { backgroundColor: theme.colors.surface, borderRadius: 4, borderWidth: 1, borderColor: '#DDD', padding: 10, width: '30%', textAlign: 'center' }
+    ,
+    smallOutlineBtn: { paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: theme.colors.primary, borderRadius: theme.borderRadius.sm }
 });

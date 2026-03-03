@@ -3,7 +3,7 @@ export const theme = {
     background: '#FFFFFF', // Pure White to match logo background
     primary: '#E12A1B', // Fire Red
     secondary: '#FF8800', // Fire Orange
-    accent: '#FFD700', // Fire Yellow
+    accent: '#FF751F', // secund orang
     text: '#000000', // Strong Black for text like the FitMind font
     textLight: '#666666', // Dark gray
     surface: '#F8F9FA', // Very light grey for cards

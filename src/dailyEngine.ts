@@ -4,13 +4,13 @@ export interface UserState {
     rachaAzucar: number;
     rachaFitness: number;
     rachaIngles: number;
-    rachaPython: number;
+    // rachaPython removed
     rachaLectura: number;
     cumplimientoAyer: number; // 0-5
     historialConsumoAzucar: boolean[]; // true = consumed, false = did not consume
     nivelFitness: number;
     nivelIngles: number;
-    nivelPython: number;
+    // nivelPython removed
     nivelLectura: number;
     nivelAzucar: number;
 }
@@ -28,13 +28,10 @@ function getSugarIntervention(nivel: number) {
 }
 export interface GeneratedPlan {
     modo: EngineMode;
-    nivelDisciplina: number;
     sugarPlan: string;
     fitnessPlan: string;
     englishPlan: string;
-    pythonPlan: string;
     readingPlan: string;
-    focusOfTheDay?: string; // Optional for backward compatibility but always generated now
 }
 
 // Internal Task Banks
@@ -110,33 +107,7 @@ const BANK_ENGLISH: LevelBank = {
     }
 };
 
-const BANK_PYTHON: LevelBank = {
-    '1-2': {
-        minimo: ["Repasa notas sobre variables y loops (5 mins)."],
-        estandar: ["Escribe un pequeño script de 10 líneas usando loops."],
-        intenso: ["Estudia a fondo sentencias condicionales e implementa 3 ejercicios básicos."]
-    },
-    '3-4': {
-        minimo: ["Repasa un concepto sobre Funciones en Python."],
-        estandar: ["Escribe 2 funciones con argumentos y retorno."],
-        intenso: ["Estudia ámbito de variables, *args y **kwargs haciendo ejemplos."]
-    },
-    '5-6': {
-        minimo: ["Revisa cómo funciona un diccionario o lista compleja."],
-        estandar: ["Implementa clases y objetos básicos o usa estructuras de datos."],
-        intenso: ["Resuelve 2 problemas algorítmicos (Arrays/Maps) en nivel fácil/intermedio."]
-    },
-    '7-8': {
-        minimo: ["Piensa y anota arquitectura lógica para tu próximo script."],
-        estandar: ["Desarrolla 45 min en un mini proyecto personal."],
-        intenso: ["Implementa una librería externa a tu proyecto (APIs, scraping, etc)."]
-    },
-    '9-10': {
-        minimo: ["Revisa tu código en busca de code-smells o mejoras simples."],
-        estandar: ["Avanza en el módulo complejo de tu proyecto principal."],
-        intenso: ["Deep work (+1.5hr): Arquitectura limpia, refactoring y despliegue/resolución de bugs duros."]
-    }
-};
+// Python domain removed per product decision
 
 const BANK_READING: LevelBank = {
     '1-3': {
@@ -156,7 +127,7 @@ const BANK_READING: LevelBank = {
     }
 };
 
-const getLevelRange = (domain: 'sugar' | 'fitness' | 'english' | 'python' | 'reading', level: number): string => {
+const getLevelRange = (domain: 'sugar' | 'fitness' | 'english' | 'reading', level: number): string => {
     if (domain === 'fitness') {
         if (level <= 2) return '1-2';
         if (level <= 5) return '3-5';
@@ -166,12 +137,6 @@ const getLevelRange = (domain: 'sugar' | 'fitness' | 'english' | 'python' | 'rea
         if (level <= 2) return '1-2';
         if (level <= 5) return '3-5';
         if (level <= 8) return '6-8';
-        return '9-10';
-    } else if (domain === 'python') {
-        if (level <= 2) return '1-2';
-        if (level <= 4) return '3-4';
-        if (level <= 6) return '5-6';
-        if (level <= 8) return '7-8';
         return '9-10';
     } else if (domain === 'reading') {
         if (level <= 3) return '1-3';
@@ -191,15 +156,6 @@ const getTaskFromLevel = (bank: LevelBank, range: string, modo: EngineMode): str
 };
 
 export const generateDailyPlan = (state: UserState): GeneratedPlan => {
-    // A) Calcular nivelDisciplina
-    const rawLevel = (state.rachaAzucar * 2) +
-        (state.rachaFitness * 1.5) +
-        (state.rachaIngles * 1.2) +
-        (state.rachaPython * 1.2) +
-        (state.rachaLectura * 1);
-
-    const nivelDisciplina = Math.min(Math.round(rawLevel), 100);
-
     // B) Determinar modo automáticamente
     let modo: EngineMode = 'estandar';
     if (state.energiaHoy <= 2) {
@@ -217,35 +173,14 @@ export const generateDailyPlan = (state: UserState): GeneratedPlan => {
         : getTaskFromLevel(BANK_SUGAR, getLevelRange('sugar', state.nivelAzucar), modo);
 
     // D) Determinar Focus of the Day
-    const { nivelPython, nivelIngles, nivelLectura } = state;
-    let focusOfTheDay = "Deep Work";
-
-    if (nivelPython >= 5 && nivelIngles >= 5 && nivelLectura >= 5 &&
-        nivelPython === nivelIngles && nivelIngles === nivelLectura) {
-        focusOfTheDay = "Deep Work";
-    } else {
-        const levels = [
-            { domain: 'Python', level: nivelPython },
-            { domain: 'Inglés', level: nivelIngles },
-            { domain: 'Lectura', level: nivelLectura }
-        ];
-
-        // Find the strictly minimum level
-        let minLevel = Math.min(nivelPython, nivelIngles, nivelLectura);
-        const lowestDomains = levels.filter(l => l.level === minLevel);
-
-        // Choose one of the lowest randomly or sequentially (using first one here)
-        focusOfTheDay = lowestDomains[0].domain;
-    }
+    const { nivelIngles, nivelLectura } = state;
+    // focusOfTheDay removed — plan will not include an explicit focus field
 
     return {
         modo,
-        nivelDisciplina,
         sugarPlan,
         fitnessPlan: getTaskFromLevel(BANK_FITNESS, getLevelRange('fitness', state.nivelFitness), modo),
         englishPlan: getTaskFromLevel(BANK_ENGLISH, getLevelRange('english', state.nivelIngles), modo),
-        pythonPlan: getTaskFromLevel(BANK_PYTHON, getLevelRange('python', state.nivelPython), modo),
         readingPlan: getTaskFromLevel(BANK_READING, getLevelRange('reading', state.nivelLectura), modo),
-        focusOfTheDay
     };
 };

@@ -11,9 +11,8 @@ export default function EstudioScreen() {
 
     const readingStreak = calculateStreak(dailyLogs, 'read');
     const englishStreak = calculateStreak(dailyLogs, 'english');
-    const pythonStreak = calculateStreak(dailyLogs, 'python');
 
-    const [activeTab, setActiveTab] = useState<'reading' | 'english' | 'python'>('reading');
+    const [activeTab, setActiveTab] = useState<'reading' | 'english'>('reading');
 
     const [timeMinutes, setTimeMinutes] = useState('');
 
@@ -24,9 +23,7 @@ export default function EstudioScreen() {
     const [practiceType, setPracticeType] = useState<'listening' | 'speaking' | 'reading' | 'writing'>('reading');
     const [newWords, setNewWords] = useState('');
 
-    // Python
-    const [topic, setTopic] = useState('');
-    const [exerciseCompleted, setExerciseCompleted] = useState(false);
+    // (python removed)
 
     const handleSave = () => {
         if (!timeMinutes) {
@@ -52,10 +49,6 @@ export default function EstudioScreen() {
             log.practiceType = practiceType;
             log.newWords = newWords;
             updateDailyLog(todayStr, { english: true });
-        } else if (activeTab === 'python') {
-            log.topic = topic;
-            log.exerciseCompleted = exerciseCompleted;
-            updateDailyLog(todayStr, { python: true });
         }
 
         addStudyLog(log);
@@ -64,8 +57,6 @@ export default function EstudioScreen() {
         setTimeMinutes('');
         setPagesRead('');
         setNewWords('');
-        setTopic('');
-        setExerciseCompleted(false);
     };
 
     const getFilteredLogs = () => studyLogs.filter(l => l.type === activeTab).slice(0, 5);
@@ -75,14 +66,14 @@ export default function EstudioScreen() {
 
             {/* Tabs */}
             <View style={styles.tabContainer}>
-                {['reading', 'english', 'python'].map((tab) => (
+                {['reading', 'english'].map((tab) => (
                     <TouchableOpacity
                         key={tab}
                         style={[styles.tab, activeTab === tab && styles.tabActive]}
                         onPress={() => setActiveTab(tab as any)}
                     >
                         <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-                            {tab === 'reading' ? '📖 Lectura' : tab === 'english' ? '🇺🇸 Inglés' : '🐍 Python'}
+                            {tab === 'reading' ? '📖 Lectura' : '🇺🇸 Inglés'}
                         </Text>
                     </TouchableOpacity>
                 ))}
@@ -90,13 +81,11 @@ export default function EstudioScreen() {
 
             <View style={styles.card}>
                 <Text style={styles.cardTitle}>
-                    {activeTab === 'reading' ? 'Registro de Lectura' : activeTab === 'english' ? 'Práctica de Inglés' : 'Estudio de Python'}
+                    {activeTab === 'reading' ? 'Registro de Lectura' : 'Práctica de Inglés'}
                 </Text>
 
                 <View style={styles.streakContainer}>
-                    <Text style={styles.streakNumber}>
-                        {activeTab === 'reading' ? readingStreak : activeTab === 'english' ? englishStreak : pythonStreak}
-                    </Text>
+                    <Text style={styles.streakNumber}>{activeTab === 'reading' ? readingStreak : englishStreak}</Text>
                     <Text style={styles.streakLabel}>🔥 racha de días</Text>
                 </View>
 
@@ -155,24 +144,7 @@ export default function EstudioScreen() {
                     </>
                 )}
 
-                {activeTab === 'python' && (
-                    <>
-                        <Text style={styles.label}>Tema estudiado:</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Ej: Bucles For, Diccionarios"
-                            value={topic}
-                            onChangeText={setTopic}
-                        />
-                        <TouchableOpacity
-                            style={styles.checkboxRow}
-                            onPress={() => setExerciseCompleted(!exerciseCompleted)}
-                        >
-                            {exerciseCompleted ? <CheckSquare color={theme.colors.success} size={24} /> : <Square color={theme.colors.textLight} size={24} />}
-                            <Text style={styles.checkboxText}>¿Completaste un ejercicio práctico?</Text>
-                        </TouchableOpacity>
-                    </>
-                )}
+                {/* python tab removed */}
 
                 <TouchableOpacity style={styles.submitBtn} onPress={handleSave}>
                     <Text style={styles.submitBtnText}>Guardar Progreso</Text>
@@ -188,7 +160,6 @@ export default function EstudioScreen() {
                             {log.timeMinutes} min
                             {log.type === 'reading' && ` • ${log.pagesRead} páginas`}
                             {log.type === 'english' && ` • ${log.practiceType}`}
-                            {log.type === 'python' && ` • ${log.topic}`}
                         </Text>
                     </View>
                 ))}
