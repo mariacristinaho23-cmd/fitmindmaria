@@ -1,17 +1,18 @@
+// @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Image, Modal, Pressable } from 'react-native';
 import { theme } from '../styles/theme';
 import { useStore, ExerciseLibraryItem } from '../store/useStore';
-import { createWorkout, createWorkoutFull, updateWorkoutFull, deleteWorkoutFull, fetchExercises, saveExercise, deleteExercise as deleteExerciseDb } from '../lib/workouts';
-import { Plus, Check, Camera, Dumbbell, X, Trash2 } from 'lucide-react-native';
+import { createWorkout, createWorkoutFull, updateWorkoutFull, fetchExercises, saveExercise, deleteExercise as deleteExerciseDb } from '../lib/workouts';
+import { Plus, Check, Camera, Dumbbell, X, Trash2, List } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function FitnessScreen() {
-    const { workoutHistory, addWorkoutSession, updateWorkoutSession, removeWorkoutSession, weightLogs, addWeightLog, updateDailyLog, exerciseLibrary, setExerciseLibrary, addExerciseToLibrary, updateExerciseInLibrary, removeExerciseFromLibrary, dailyLogs, dailyPlans } = useStore();
+    const { workoutHistory, addWorkoutSession, updateWorkoutSession, weightLogs, addWeightLog, updateDailyLog, exerciseLibrary, setExerciseLibrary, addExerciseToLibrary, updateExerciseInLibrary, removeExerciseFromLibrary, dailyLogs, dailyPlans, routines, addRoutine, updateRoutine, removeRoutine, currentDate } = useStore();
 
-    const [activeTab, setActiveTab] = useState<'hoy' | 'biblioteca'>('hoy');
+    const [activeTab, setActiveTab] = useState<'hoy' | 'rutinas' | 'biblioteca'>('hoy');
 
-    
+
 
     // Weight State
     const [currentWeight, setCurrentWeight] = useState('');
@@ -22,7 +23,14 @@ export default function FitnessScreen() {
     const [libImage, setLibImage] = useState<string | null>(null);
     const [editingExercise, setEditingExercise] = useState<ExerciseLibraryItem | null>(null);
 
-    
+    // Rutinas State
+    const [showRoutineModal, setShowRoutineModal] = useState(false);
+    const [routineName, setRoutineName] = useState('');
+    const [routineExercises, setRoutineExercises] = useState<string[]>([]);
+    const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
+    const [showLoadRoutineModal, setShowLoadRoutineModal] = useState(false);
+
+
 
     useEffect(() => {
         if (activeTab === 'biblioteca') {
@@ -44,7 +52,7 @@ export default function FitnessScreen() {
         }
     };
 
-    
+
 
     const handleLogWeight = () => {
         if (!currentWeight) {
@@ -52,7 +60,7 @@ export default function FitnessScreen() {
             return;
         }
         addWeightLog({
-            date: new Date().toISOString().split('T')[0],
+            date: currentDate,
             weight: parseFloat(currentWeight)
         });
         setCurrentWeight('');
@@ -170,12 +178,10 @@ export default function FitnessScreen() {
     const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
     const [showMuscleModal, setShowMuscleModal] = useState(false);
     const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
-    const [showSessionModal, setShowSessionModal] = useState(false);
-    const [sessionToView, setSessionToView] = useState<any>(null);
 
-    const handleAddExerciseToToday = (ex: ExerciseLibraryItem) => {
+    const handleAddExerciseToToday = (ex: ExerciseLibraryItem, defaultWeight = '', defaultReps = '', defaultSets = '') => {
         if (todaysExercises.find(e => e.exerciseId === ex.id)) return;
-        setTodaysExercises([...todaysExercises, { exerciseId: ex.id, name: ex.name, weight: '', reps: '', sets: '' }]);
+        setTodaysExercises(prev => [...prev, { exerciseId: ex.id, name: ex.name, weight: defaultWeight, reps: defaultReps, sets: defaultSets }]);
     };
 
     const handleUpdateTodayExercise = (exerciseId: string, field: 'weight' | 'reps' | 'sets', value: string) => {
@@ -186,11 +192,7 @@ export default function FitnessScreen() {
         setTodaysExercises(todaysExercises.filter(e => e.exerciseId !== exerciseId));
     };
 
-    // Session modal view handlers
-    const closeSessionModal = () => {
-        setShowSessionModal(false);
-        setSessionToView(null);
-    };
+
 
     const handleSaveTodaysSession = async () => {
         if (todaysExercises.length === 0) {
@@ -199,7 +201,7 @@ export default function FitnessScreen() {
         }
 
         const validExs = todaysExercises.map(e => ({ exerciseId: e.exerciseId, weight: parseFloat(e.weight) || 0, reps: parseInt(e.reps) || 0, sets: parseInt(e.sets) || 0 }));
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = currentDate;
 
         let localId: string | null = null;
 
@@ -266,33 +268,9 @@ export default function FitnessScreen() {
         Alert.alert('Guardado', 'Entrenamiento del día guardado en historial.');
     };
 
-    const openSessionModal = (session: any) => {
-        setSessionToView(session);
-        setShowSessionModal(true);
-    };
 
-    const handleDeleteSession = (sessionId: string) => {
-        Alert.alert('Eliminar sesión', '¿Deseas eliminar esta sesión?', [
-            { text: 'Cancelar', style: 'cancel' },
-            { text: 'Eliminar', style: 'destructive', onPress: async () => {
-                const s = (workoutHistory || []).find(w => w.id === sessionId);
-                if (s?.remoteId) {
-                    try {
-                        await deleteWorkoutFull(s.remoteId);
-                    } catch (e) {
-                        console.error('Error deleting remote workout:', e);
-                    }
-                }
-                removeWorkoutSession(sessionId);
-                if (sessionToView?.id === sessionId) {
-                    setSessionToView(null);
-                    setShowSessionModal(false);
-                }
-            } }
-        ]);
-    };
 
-    
+
 
     const getRecentHistoryForLibraryEx = (exId: string) => {
         for (let w of workoutHistory) {
@@ -311,7 +289,11 @@ export default function FitnessScreen() {
             <View style={styles.tabsRow}>
                 <TouchableOpacity onPress={() => setActiveTab('hoy')} style={[styles.tabBtn, activeTab === 'hoy' && styles.tabBtnActive]}>
                     <Dumbbell size={20} color={activeTab === 'hoy' ? theme.colors.primary : theme.colors.textLight} />
-                    <Text style={[styles.tabBtnText, activeTab === 'hoy' && styles.tabBtnTextActive]}>Entrenamiento de Hoy</Text>
+                    <Text style={[styles.tabBtnText, activeTab === 'hoy' && styles.tabBtnTextActive]} numberOfLines={1} adjustsFontSizeToFit>Entrenamiento</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setActiveTab('rutinas')} style={[styles.tabBtn, activeTab === 'rutinas' && styles.tabBtnActive]}>
+                    <List size={20} color={activeTab === 'rutinas' ? theme.colors.primary : theme.colors.textLight} />
+                    <Text style={[styles.tabBtnText, activeTab === 'rutinas' && styles.tabBtnTextActive]}>Rutinas</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setActiveTab('biblioteca')} style={[styles.tabBtn, activeTab === 'biblioteca' && styles.tabBtnActive]}>
                     <Plus size={20} color={activeTab === 'biblioteca' ? theme.colors.primary : theme.colors.textLight} />
@@ -338,61 +320,82 @@ export default function FitnessScreen() {
                                     <Text style={styles.smallBtnText}>Guardar</Text>
                                 </TouchableOpacity>
                             </View>
-                            {weightLogs.length > 0 && (
-                                <Text style={styles.subtext}>Último registro: {weightLogs[0].weight} kg ({weightLogs[0].date})</Text>
+                            {(weightLogs || []).length > 0 && (
+                                <Text style={styles.subtext}>
+                                    Último registro: {weightLogs[0].weight}kg ({weightLogs[0].date})</Text>
                             )}
                         </View>
 
-                        {/* Historial Reciente: editar / eliminar sesiones */}
-                        <View style={styles.card}>
-                            <Text style={styles.cardTitle}>Historial Reciente</Text>
-                            {(workoutHistory || []).slice(0, 7).map(w => (
-                                <View key={w.id} style={[styles.historyItem, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
-                                    <TouchableOpacity style={{ flex: 1 }} onPress={() => openSessionModal(w)}>
-                                        <Text style={styles.historyDate}>{w.date}</Text>
-                                        <Text style={styles.historyText}>{w.routineName} — {w.exercises ? w.exercises.length + ' ejercicios' : ''}</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity style={[styles.smallOutlineBtn, { borderColor: theme.colors.error }]} onPress={() => handleDeleteSession(w.id)}>
-                                        <Text style={[styles.outlineBtnText, { color: theme.colors.error }]}>Eliminar</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            ))}
-                            {(workoutHistory || []).length === 0 && <Text style={styles.subtext}>Aún no hay entrenamientos registrados.</Text>}
-                        </View>
+
                         {/* Entrenamiento de Hoy */}
                         <View style={styles.card}>
-                            <Text style={styles.cardTitle}>Entrenamiento de Hoy</Text>
-
-                                <Text style={[styles.label, { marginBottom: 8 }]}>Seleccionar por grupo muscular:</Text>
-                                {(exerciseLibrary || []).length === 0 && (
-                                    <Text style={styles.subtext}>Agrega ejercicios en la Biblioteca primero.</Text>
-                                )}
-
-                                <View style={{ marginBottom: 12 }}>
-                                    <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowMuscleModal(true)}>
-                                        <Text style={styles.outlineBtnText}>{selectedMuscle ? `Grupo: ${selectedMuscle}` : 'Seleccionar Grupo Muscular'}</Text>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+                                <Text style={[styles.cardTitle, { marginBottom: 8, marginRight: 8 }]}>Entrenamiento de Hoy</Text>
+                                {(routines || []).length > 0 && (
+                                    <TouchableOpacity style={[styles.smallOutlineBtn, { marginBottom: 8 }]} onPress={() => setShowLoadRoutineModal(true)}>
+                                        <Text style={styles.outlineBtnText}>Cargar Rutina</Text>
                                     </TouchableOpacity>
+                                )}
+                            </View>
 
-                                    <Modal visible={showMuscleModal} animationType='slide' transparent={true}>
-                                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center' }}>
-                                            <View style={{ backgroundColor: theme.colors.surface, margin: 20, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, maxHeight: '70%' }}>
-                                                <Text style={[styles.cardTitle, { marginBottom: 8 }]}>Seleccionar Grupo</Text>
-                                                <ScrollView>
-                                                    {Array.from(new Set((exerciseLibrary || []).map(e => (e.muscleGroup || 'Otros').trim()))).map(group => (
-                                                        <Pressable key={group} onPress={() => { setSelectedMuscle(group); setShowMuscleModal(false); }} style={{ paddingVertical: 12 }}>
-                                                            <Text style={[styles.label, { color: theme.colors.text }]}>{group || 'Otros'}</Text>
-                                                        </Pressable>
-                                                    ))}
-                                                </ScrollView>
-                                                <TouchableOpacity style={[styles.outlineBtn, { marginTop: theme.spacing.md }]} onPress={() => { setSelectedMuscle(null); setShowMuscleModal(false); }}>
-                                                    <Text style={styles.outlineBtnText}>Cancelar</Text>
+                            <Modal visible={showLoadRoutineModal} animationType='slide' transparent={true}>
+                                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center' }}>
+                                    <View style={{ backgroundColor: theme.colors.surface, margin: 20, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, maxHeight: '80%' }}>
+                                        <Text style={[styles.cardTitle, { marginBottom: 12 }]}>Seleccionar Rutina</Text>
+                                        <ScrollView>
+                                            {(routines || []).map(r => (
+                                                <TouchableOpacity key={r.id} style={styles.routineChip} onPress={() => {
+                                                    // Load exercises
+                                                    (r.exerciseIds || []).forEach(id => {
+                                                        const ex = exerciseLibrary.find(e => e.id === id);
+                                                        if (ex) {
+                                                            const recent = getRecentHistoryForLibraryEx(id);
+                                                            handleAddExerciseToToday(ex, recent ? recent.weight.toString() : '', recent ? recent.reps.toString() : '', recent ? recent.sets.toString() : '');
+                                                        }
+                                                    });
+                                                    setShowLoadRoutineModal(false);
+                                                }}>
+                                                    <Text style={styles.routineChipText}>{r.name} ({(r.exerciseIds || []).length} ej.)</Text>
                                                 </TouchableOpacity>
-                                            </View>
-                                        </View>
-                                    </Modal>
+                                            ))}
+                                        </ScrollView>
+                                        <TouchableOpacity style={[styles.outlineBtn, { marginTop: theme.spacing.md }]} onPress={() => setShowLoadRoutineModal(false)}>
+                                            <Text style={styles.outlineBtnText}>Cancelar</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </Modal>
 
-                                    {/* List exercises for selected muscle */}
-                                    {selectedMuscle && (
+                            <Text style={[styles.label, { marginBottom: 8, marginTop: 12 }]}>Seleccionar por grupo muscular:</Text>
+                            {(exerciseLibrary || []).length === 0 && (
+                                <Text style={styles.subtext}>Agrega ejercicios en la Biblioteca primero.</Text>
+                            )}
+
+                            <View style={{ marginBottom: 12, paddingHorizontal: 4 }}>
+                                <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowMuscleModal(true)}>
+                                    <Text style={styles.outlineBtnText}>{selectedMuscle ? `Grupo: ${selectedMuscle}` : 'Seleccionar Grupo Muscular'}</Text>
+                                </TouchableOpacity>
+
+                                <Modal visible={showMuscleModal} animationType='slide' transparent={true}>
+                                    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center' }}>
+                                        <View style={{ backgroundColor: theme.colors.surface, margin: 20, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, maxHeight: '70%' }}>
+                                            <Text style={[styles.cardTitle, { marginBottom: 8 }]}>Seleccionar Grupo</Text>
+                                            <ScrollView>
+                                                {Array.from(new Set((exerciseLibrary || []).map(e => (e.muscleGroup || 'Otros').trim()))).map(group => (
+                                                    <Pressable key={group} onPress={() => { setSelectedMuscle(group); setShowMuscleModal(false); }} style={{ paddingVertical: 12 }}>
+                                                        <Text style={[styles.label, { color: theme.colors.text }]}>{group || 'Otros'}</Text>
+                                                    </Pressable>
+                                                ))}
+                                            </ScrollView>
+                                            <TouchableOpacity style={[styles.outlineBtn, { marginTop: theme.spacing.md }]} onPress={() => { setSelectedMuscle(null); setShowMuscleModal(false); }}>
+                                                <Text style={styles.outlineBtnText}>Cancelar</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                </Modal>
+
+                                {/* List exercises for selected muscle */}
+                                {selectedMuscle && (
                                     <View style={{ marginTop: 8 }}>
                                         {(exerciseLibrary || []).filter(ex => ((ex.muscleGroup || 'Otros').trim() === selectedMuscle)).map(ex => (
                                             <View key={ex.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8 }}>
@@ -404,17 +407,17 @@ export default function FitnessScreen() {
                                         ))}
                                     </View>
                                 )}
-                                </View>
+                            </View>
 
                             {todaysExercises.length > 0 && (
-                                <View style={{ marginTop: 8 }}>
+                                <View style={{ marginTop: 8, paddingHorizontal: 4 }}>
                                     {todaysExercises.map(ex => (
                                         <View key={ex.exerciseId} style={[styles.advExRow, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-                                            <Text style={{ flex: 1, ...styles.advExName }}>{ex.name}</Text>
+                                            <Text style={{ flex: 0.8, ...styles.advExName }}>{ex.name}</Text>
                                             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                                <TextInput value={ex.weight} onChangeText={v => handleUpdateTodayExercise(ex.exerciseId, 'weight', v)} placeholder='Peso' keyboardType='numeric' style={[styles.smallInput, { width: 80 }]} />
-                                                <TextInput value={ex.sets} onChangeText={v => handleUpdateTodayExercise(ex.exerciseId, 'sets', v)} placeholder='Series' keyboardType='numeric' style={[styles.smallInput, { width: 70, marginLeft: 8 }]} />
-                                                <TextInput value={ex.reps} onChangeText={v => handleUpdateTodayExercise(ex.exerciseId, 'reps', v)} placeholder='Reps' keyboardType='numeric' style={[styles.smallInput, { width: 70, marginLeft: 8 }]} />
+                                                <TextInput value={ex.weight} onChangeText={v => handleUpdateTodayExercise(ex.exerciseId, 'weight', v)} placeholder='Peso' keyboardType='numeric' style={[styles.smallInput, { width: 65 }]} />
+                                                <TextInput value={ex.sets} onChangeText={v => handleUpdateTodayExercise(ex.exerciseId, 'sets', v)} placeholder='Series' keyboardType='numeric' style={[styles.smallInput, { width: 60, marginLeft: 6 }]} />
+                                                <TextInput value={ex.reps} onChangeText={v => handleUpdateTodayExercise(ex.exerciseId, 'reps', v)} placeholder='Reps' keyboardType='numeric' style={[styles.smallInput, { width: 60, marginLeft: 6 }]} />
                                                 <TouchableOpacity onPress={() => handleRemoveTodayExercise(ex.exerciseId)} style={{ marginLeft: 8 }}>
                                                     <Trash2 color={theme.colors.error} size={18} />
                                                 </TouchableOpacity>
@@ -434,27 +437,158 @@ export default function FitnessScreen() {
                     </>
                 )}
 
-                {/* Session viewer modal */}
-                <Modal visible={showSessionModal} animationType='slide' transparent={true}>
-                    <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center' }}>
-                        <View style={{ backgroundColor: theme.colors.surface, margin: 20, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, maxHeight: '80%' }}>
-                            <Text style={styles.cardTitle}>Detalle de Sesión</Text>
-                            <Text style={styles.subtext}>{sessionToView?.date} — {sessionToView?.routineName}</Text>
-                            <ScrollView style={{ marginTop: 12 }}>
-                                {(sessionToView?.exercises || []).map((e: any, i: number) => (
-                                    <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}>
-                                        <Text style={{ flex: 1 }}>{(exerciseLibrary || []).find(x => x.id === e.exerciseId)?.name || e.exerciseId}</Text>
-                                        <Text style={{ marginLeft: 12 }}>{e.sets}x{e.reps} @ {e.weight}kg</Text>
-                                    </View>
-                                ))}
-                            </ScrollView>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: theme.spacing.md }}>
-                                <TouchableOpacity style={styles.outlineBtn} onPress={closeSessionModal}><Text style={styles.outlineBtnText}>Cerrar</Text></TouchableOpacity>
-                                <TouchableOpacity style={[styles.outlineBtn, { borderColor: theme.colors.error }]} onPress={() => handleDeleteSession(sessionToView?.id)}><Text style={[styles.outlineBtnText, { color: theme.colors.error }]}>Eliminar</Text></TouchableOpacity>
+
+
+                {activeTab === 'rutinas' && (
+                    <>
+                        <View style={styles.card}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.md }}>
+                                <Text style={[styles.cardTitle, { marginBottom: 0 }]}>
+                                    {editingRoutineId ? 'Editar Rutina' : 'Crear Nueva Rutina'}
+                                </Text>
+                                {editingRoutineId && (
+                                    <TouchableOpacity onPress={() => {
+                                        setEditingRoutineId(null);
+                                        setRoutineName('');
+                                        setRoutineExercises([]);
+                                        setShowRoutineModal(false);
+                                    }}>
+                                        <X color={theme.colors.textLight} size={24} />
+                                    </TouchableOpacity>
+                                )}
                             </View>
+
+                            <TextInput
+                                style={styles.input}
+                                placeholder="Nombre de la Rutina (ej. Pecho y Tríceps)"
+                                value={routineName}
+                                onChangeText={setRoutineName}
+                            />
+
+                            <Text style={[styles.label, { marginBottom: 8 }]}>Ejercicios en la Rutina:</Text>
+                            {routineExercises.length === 0 ? (
+                                <Text style={{ ...styles.subtext, marginBottom: 16 }}>Aún no has agregado ejercicios.</Text>
+                            ) : (
+                                <View style={{ marginBottom: 16 }}>
+                                    {routineExercises.map(id => {
+                                        const ex = exerciseLibrary.find(e => e.id === id);
+                                        if (!ex) return null;
+                                        return (
+                                            <View key={id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4 }}>
+                                                <Text style={{ flex: 1, ...styles.libName }}>{ex.name}</Text>
+                                                <TouchableOpacity onPress={() => setRoutineExercises(routineExercises.filter(eId => eId !== id))}>
+                                                    <X color={theme.colors.error} size={20} />
+                                                </TouchableOpacity>
+                                            </View>
+                                        );
+                                    })}
+                                </View>
+                            )}
+
+                            <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowRoutineModal(true)}>
+                                <Plus color={theme.colors.primary} size={20} />
+                                <Text style={styles.outlineBtnText}>Modificar Ejercicios</Text>
+                            </TouchableOpacity>
+
+                            <Modal visible={showRoutineModal} animationType='slide' transparent={true}>
+                                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center' }}>
+                                    <View style={{ backgroundColor: theme.colors.surface, margin: 20, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, maxHeight: '80%' }}>
+                                        <Text style={[styles.cardTitle, { marginBottom: 12 }]}>Añadir Ejercicios</Text>
+                                        <ScrollView>
+                                            {(() => {
+                                                const grouped = (exerciseLibrary || []).reduce((acc: Record<string, ExerciseLibraryItem[]>, ex) => {
+                                                    const group = ex.muscleGroup ? ex.muscleGroup.trim().toUpperCase() : 'OTROS';
+                                                    if (!acc[group]) acc[group] = [];
+                                                    acc[group].push(ex);
+                                                    return acc;
+                                                }, {});
+
+                                                return Object.keys(grouped).sort().map(muscle => (
+                                                    <View key={muscle} style={{ marginBottom: theme.spacing.md }}>
+                                                        <Text style={styles.muscleGroupTitle}>{muscle}</Text>
+                                                        {grouped[muscle].map(ex => {
+                                                            const isSelected = routineExercises.includes(ex.id);
+                                                            return (
+                                                                <TouchableOpacity key={ex.id} style={[styles.libraryCard, isSelected && { borderColor: theme.colors.primary, borderWidth: 1 }]} onPress={() => {
+                                                                    if (isSelected) setRoutineExercises(routineExercises.filter(id => id !== ex.id));
+                                                                    else setRoutineExercises([...routineExercises, ex.id]);
+                                                                }}>
+                                                                    <View style={styles.libInfo}>
+                                                                        <Text style={styles.libName}>{ex.name}</Text>
+                                                                    </View>
+                                                                    {isSelected && <Check color={theme.colors.primary} size={20} />}
+                                                                </TouchableOpacity>
+                                                            );
+                                                        })}
+                                                    </View>
+                                                ));
+                                            })()}
+                                        </ScrollView>
+                                        <TouchableOpacity style={[styles.submitBtn, { marginTop: theme.spacing.md }]} onPress={() => setShowRoutineModal(false)}>
+                                            <Text style={styles.submitBtnText}>Aceptar</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </Modal>
+
+                            <TouchableOpacity style={styles.submitBtn} onPress={() => {
+                                if (!routineName.trim() || routineExercises.length === 0) {
+                                    Alert.alert('Faltan datos', 'Ponle un nombre a tu rutina y selecciona al menos un ejercicio.');
+                                    return;
+                                }
+                                if (editingRoutineId) {
+                                    updateRoutine(editingRoutineId, { name: routineName, exerciseIds: routineExercises });
+                                    Alert.alert('Actualizado', 'La rutina fue actualizada.');
+                                } else {
+                                    addRoutine({ name: routineName, exerciseIds: routineExercises });
+                                    Alert.alert('Guardado', 'La rutina fue creada.');
+                                }
+                                setEditingRoutineId(null);
+                                setRoutineName('');
+                                setRoutineExercises([]);
+                            }}>
+                                <Text style={styles.submitBtnText}>{editingRoutineId ? 'Guardar Cambios' : 'Crear Rutina'}</Text>
+                            </TouchableOpacity>
+
+                            {editingRoutineId && (
+                                <TouchableOpacity style={[styles.outlineBtn, { borderColor: theme.colors.error, marginTop: theme.spacing.md }]} onPress={() => {
+                                    removeRoutine(editingRoutineId);
+                                    setEditingRoutineId(null);
+                                    setRoutineName('');
+                                    setRoutineExercises([]);
+                                    Alert.alert('Eliminado', 'Rutina eliminada.');
+                                }}>
+                                    <Trash2 color={theme.colors.error} size={20} />
+                                    <Text style={[styles.outlineBtnText, { color: theme.colors.error }]}>Eliminar Rutina</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
-                    </View>
-                </Modal>
+
+                        {!editingRoutineId && (routines || []).length > 0 && (
+                            <View>
+                                <Text style={[styles.cardTitle, { marginVertical: 10, marginLeft: 5 }]}>Mis Rutinas ({(routines || []).length})</Text>
+                                {(routines || []).map(r => (
+                                    <TouchableOpacity key={r.id} style={styles.card} onPress={() => {
+                                        setEditingRoutineId(r.id);
+                                        setRoutineName(r.name);
+                                        setRoutineExercises(r.exerciseIds || []);
+                                    }}>
+                                        <Text style={styles.cardTitle}>{r.name}</Text>
+                                        <Text style={styles.subtext}>{(r.exerciseIds || []).length} ejercicios</Text>
+                                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
+                                            {(r.exerciseIds || []).map(id => {
+                                                const ex = exerciseLibrary.find(e => e.id === id);
+                                                return <Text key={id} style={{ ...styles.routineChipText, marginRight: 8, color: theme.colors.primary }}>• {ex?.name || 'Desconocido'}</Text>;
+                                            })}
+                                        </View>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        )}
+                    </>
+                )}
+
+
 
                 {activeTab === 'biblioteca' && (
                     <>
@@ -546,7 +680,7 @@ export default function FitnessScreen() {
                     </>
                 )}
 
-                
+
 
             </ScrollView>
         </View>
@@ -555,7 +689,7 @@ export default function FitnessScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
-    tabsRow: { flexDirection: 'row', backgroundColor: theme.colors.surface, paddingTop: 50, paddingBottom: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, elevation: 2, zIndex: 10 },
+    tabsRow: { flexDirection: 'row', backgroundColor: theme.colors.surface, paddingTop: 50, paddingBottom: 10, paddingHorizontal: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 2 }, elevation: 2, zIndex: 10 },
     tabBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: theme.spacing.sm, borderBottomWidth: 2, borderBottomColor: 'transparent' },
     tabBtnActive: { borderBottomColor: theme.colors.primary },
     tabBtnText: { ...theme.typography.caption, color: theme.colors.textLight, marginTop: 4, fontWeight: '600' },

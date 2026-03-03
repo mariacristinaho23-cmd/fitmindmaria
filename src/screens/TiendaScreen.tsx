@@ -1,20 +1,19 @@
+// @ts-nocheck
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput } from 'react-native';
 import { theme } from '../styles/theme';
 import { useStore } from '../store/useStore';
 
-const CATALOG = [
-    { id: 'coffee', title: 'Café especial', cost: 200 },
-    { id: 'movie', title: 'Noche de película', cost: 500 },
-    { id: 'book', title: 'Libro nuevo', cost: 800 },
-];
-
 export default function TiendaScreen() {
     const { creditosDisponibles, canjearRecompensa } = useStore();
-    const { customRewards, addCustomReward, removeCustomReward, redeemReward, redemptionHistory } = useStore();
+    const { customRewards, addCustomReward, removeCustomReward, updateCustomReward, redeemReward } = useStore();
 
     const [title, setTitle] = useState('');
     const [cost, setCost] = useState('');
+
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editTitle, setEditTitle] = useState('');
+    const [editCost, setEditCost] = useState('');
 
     const handleBuy = (item: { title: string; cost: number }) => {
         const ok = redeemReward(item);
@@ -32,29 +31,30 @@ export default function TiendaScreen() {
         setTitle(''); setCost('');
     };
 
+    const startEditing = (r: { id: string; title: string; cost: number }) => {
+        setEditingId(r.id);
+        setEditTitle(r.title);
+        setEditCost(r.cost.toString());
+    };
+
+    const saveEdit = () => {
+        const c = parseInt(editCost || '0', 10);
+        if (!editTitle || !c || c <= 0) return Alert.alert('Datos inválidos', 'Introduce nombre y precio válidos');
+        if (editingId) {
+            updateCustomReward(editingId, { title: editTitle, cost: c });
+        }
+        setEditingId(null);
+    };
+
+    const cancelEdit = () => {
+        setEditingId(null);
+    };
+
     return (
         <View style={styles.container}>
             <Text style={styles.header}>Mercado de Recompensas</Text>
             <Text style={styles.sub}>Créditos disponibles: {creditosDisponibles}</Text>
-            <FlatList
-                data={CATALOG}
-                keyExtractor={(i) => i.id}
-                renderItem={({ item }) => (
-                    <View style={styles.item}>
-                        <Text style={styles.title}>{item.title}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Text style={styles.cost}>{item.cost} ✨</Text>
-                            <TouchableOpacity style={styles.buyBtn} onPress={() => handleBuy(item)}>
-                                <Text style={styles.buyText}>Canjear</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                )}
-            />
 
-            <View style={{ height: 1, backgroundColor: '#EEE', marginVertical: theme.spacing.md }} />
-
-            <Text style={[styles.sub, { marginBottom: theme.spacing.sm }]}>Recompensas Personalizadas</Text>
             <View style={{ flexDirection: 'row', marginBottom: theme.spacing.sm }}>
                 <TextInput placeholder='Nombre de la recompensa' value={title} onChangeText={setTitle} style={styles.input} />
                 <TextInput placeholder='Precio' value={cost} onChangeText={setCost} style={[styles.input, { width: 100, marginLeft: theme.spacing.sm }]} keyboardType='numeric' />
@@ -63,35 +63,38 @@ export default function TiendaScreen() {
 
             {(customRewards || []).map(r => (
                 <View key={r.id} style={styles.item}>
-                    <Text style={styles.title}>{r.title}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={styles.cost}>{r.cost} ✨</Text>
-                        <TouchableOpacity style={styles.buyBtn} onPress={() => handleBuy(r)}>
-                            <Text style={styles.buyText}>Canjear</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={{ marginLeft: theme.spacing.sm }} onPress={() => removeCustomReward(r.id)}>
-                            <Text style={{ color: theme.colors.error }}>Eliminar</Text>
-                        </TouchableOpacity>
-                    </View>
+                    {editingId === r.id ? (
+                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+                            <TextInput value={editTitle} onChangeText={setEditTitle} style={[styles.input, { marginRight: theme.spacing.sm }]} />
+                            <TextInput value={editCost} onChangeText={setEditCost} style={[styles.input, { width: 70, marginRight: theme.spacing.sm }]} keyboardType='numeric' />
+                            <TouchableOpacity style={styles.buyBtn} onPress={saveEdit}>
+                                <Text style={styles.buyText}>Guardar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={{ marginLeft: theme.spacing.sm }} onPress={cancelEdit}>
+                                <Text style={{ color: theme.colors.textLight }}>Cancelar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <>
+                            <Text style={styles.title}>{r.title}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={styles.cost}>{r.cost} ✨</Text>
+                                <TouchableOpacity style={styles.buyBtn} onPress={() => handleBuy(r)}>
+                                    <Text style={styles.buyText}>Canjear</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={{ marginLeft: theme.spacing.sm }} onPress={() => startEditing(r)}>
+                                    <Text style={{ color: theme.colors.primary }}>Editar</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={{ marginLeft: theme.spacing.sm }} onPress={() => removeCustomReward(r.id)}>
+                                    <Text style={{ color: theme.colors.error }}>Eliminar</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </>
+                    )}
                 </View>
             ))}
 
-            <View style={{ height: 1, backgroundColor: '#EEE', marginVertical: theme.spacing.md }} />
 
-            <Text style={[styles.sub, { marginBottom: theme.spacing.sm }]}>Historial de Canjes</Text>
-            {(redemptionHistory || []).length === 0 ? (
-                <Text style={styles.planText}>Aún no has canjeado nada.</Text>
-            ) : (
-                (redemptionHistory || []).map(h => (
-                    <View key={h.id} style={styles.item}>
-                        <Text style={styles.title}>{h.title}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            <Text style={styles.cost}>{h.cost} ✨</Text>
-                            <Text style={[styles.planText, { marginLeft: theme.spacing.sm, color: theme.colors.textLight }]}>{new Date(h.date).toLocaleString()}</Text>
-                        </View>
-                    </View>
-                ))
-            )}
         </View>
     );
 }

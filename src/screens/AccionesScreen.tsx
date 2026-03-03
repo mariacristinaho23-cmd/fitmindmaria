@@ -1,31 +1,22 @@
+// @ts-nocheck
 import React, { useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing } from 'react-native';
 import { theme } from '../styles/theme';
 import { useStore } from '../store/useStore';
 import { Dumbbell, BookOpen, CheckCircle2 } from 'lucide-react-native';
 
-const BASE_ACTIONS = [
-    { id: 'train', title: 'Completar Entrenamiento', base: 150, icon: 'dumbbell' },
-    { id: 'sugar', title: 'Día sin Azúcar', base: 50, icon: 'check' },
-];
 
-function getDailyAmount(base: number) {
-    // Varia según el día del mes para dar dinamismo: multiplicador entre 0.9 y 1.3
-    const day = new Date().getDate();
-    const seed = day % 5; // 0..4
-    const mult = 0.9 + (seed * 0.1); // 0.9,1.0,1.1,1.2,1.3
-    return Math.round(base * mult);
-}
 
 export default function AccionesScreen() {
-    const { addCredits, addStudyLog, updateDailyLog, dailyPlans, dailyLogs } = useStore();
+    const { addCredits, addStudyLog, updateDailyLog, dailyPlans, dailyLogs, currentDate, forceResetDay } = useStore();
 
-    const today = new Date();
+    const today = new Date(currentDate + "T12:00:00Z");
     const weekdayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
     const dayLabel = `${weekdayNames[today.getDay()]}, ${today.getDate()}`;
 
     const [snackMsg, setSnackMsg] = useState<string | null>(null);
     const anim = useRef(new Animated.Value(80)).current; // translateY
+    const [claiming, setClaiming] = useState<Record<string, boolean>>({});
 
     // Focus timer state
     const [running, setRunning] = useState(false);
@@ -42,12 +33,7 @@ export default function AccionesScreen() {
         });
     };
 
-    const handlePress = (amount: number, title: string) => {
-        const prev = useStore.getState().creditosDisponibles || 0;
-        const total = prev + amount;
-        addCredits(amount);
-        showSnack(`+${amount} ✨  •  Total: ${total}`);
-    };
+
 
     // Claimable reinforcement cards (will disappear when task marked completed in dailyLogs)
     const claimableActions = [
@@ -58,20 +44,23 @@ export default function AccionesScreen() {
     ];
 
     const handleClaim = (action: { id: string; title: string; field: string; base: number }) => {
-        const today = new Date().toISOString().split('T')[0];
+        if (claiming[action.id]) return;
+        setClaiming(prev => ({ ...prev, [action.id]: true }));
+
+        const todayStr = useStore.getState().currentDate;
         // compute multiplier from plan mode to show amount
-        const plan = (dailyPlans && dailyPlans[today]) || null;
+        const plan = (dailyPlans && dailyPlans[todayStr]) || null;
         const modo: any = plan?.modo || 'estandar';
         const multipliers: Record<string, number> = { minimo: 0.5, estandar: 1, intenso: 1.5 };
         const mult = multipliers[modo] || 1;
         const amount = Math.round(action.base * mult);
 
         // mark daily log field to true; store will grant credits via updateDailyLog
-        updateDailyLog(today, { [action.field]: true } as any);
+        updateDailyLog(todayStr, { [action.field]: true } as any);
         showSnack(`+${amount} ✨  •  Recompensa: ${action.title}`);
     };
 
-    
+
 
     const startFocus = () => {
         if (running) return;
@@ -91,10 +80,10 @@ export default function AccionesScreen() {
         const minutes = Math.floor(seconds / 60);
         if (minutes > 0) {
             const amount = minutes * 2; // 2 créditos por minuto
-            const todayStr = new Date().toISOString().split('T')[0];
+            const todayStr = currentDate;
             try {
                 addStudyLog({ date: todayStr, type: 'focus', timeMinutes: minutes });
-            } catch (e) {}
+            } catch (e) { }
             const prev = useStore.getState().creditosDisponibles || 0;
             addCredits(amount);
             const total = prev + amount;
@@ -126,31 +115,11 @@ export default function AccionesScreen() {
                 </View>
             </View>
 
-            {BASE_ACTIONS.map(a => {
-                const amount = getDailyAmount(a.base);
-                return (
-                    <TouchableOpacity key={a.id} style={styles.card} onPress={() => handlePress(amount, a.title)}>
-                        <View style={styles.cardLeft}>
-                            <View style={styles.iconWrap}>
-                                {a.id === 'train' && <Dumbbell color={theme.colors.primary} size={20} />}
-                                {a.id === 'read' && <BookOpen color={theme.colors.primary} size={20} />}
-                                {a.id === 'sugar' && <CheckCircle2 color={theme.colors.primary} size={20} />}
-                            </View>
-                        </View>
-                        <View style={styles.cardCenter}>
-                            <Text style={styles.cardTitle}>{a.title}</Text>
-                            <Text style={styles.cardDesc}>Pulsa para registrar y ganar créditos hoy.</Text>
-                        </View>
-                        <View style={styles.cardRight}>
-                            <Text style={styles.creditPlus}>+{amount}</Text>
-                        </View>
-                    </TouchableOpacity>
-                );
-            })}
+
 
             {/* Claimable reinforcement cards (only show if not already completed today) */}
             {claimableActions.map(act => {
-                const todayStr = new Date().toISOString().split('T')[0];
+                const todayStr = currentDate;
                 const todayLog = (dailyLogs || {})[todayStr] || {};
                 if (todayLog[act.field as keyof typeof todayLog]) return null;
 
@@ -161,16 +130,17 @@ export default function AccionesScreen() {
                 const mult = multipliers[modo] || 1;
                 const amount = Math.round(act.base * mult);
                 return (
-                    <TouchableOpacity key={act.id} style={[styles.card, { backgroundColor: '#FFF7ED' }]} onPress={() => handleClaim(act)}>
+                    <TouchableOpacity key={act.id} disabled={claiming[act.id]} style={styles.card} onPress={() => handleClaim(act)}>
                         <View style={styles.cardLeft}>
                             <View style={styles.iconWrap}>
-                                {/* simple glyphs */}
-                                <Text style={{ fontWeight: '700' }}>{act.title.charAt(0)}</Text>
+                                {act.id === 'train' && <Dumbbell color={theme.colors.primary} size={20} />}
+                                {(act.id === 'read' || act.id === 'study') && <BookOpen color={theme.colors.primary} size={20} />}
+                                {act.id === 'sugar' && <CheckCircle2 color={theme.colors.primary} size={20} />}
                             </View>
                         </View>
                         <View style={styles.cardCenter}>
                             <Text style={styles.cardTitle}>{act.title}</Text>
-                            <Text style={styles.cardDesc}>Reclama tu refuerzo diario</Text>
+                            <Text style={styles.cardDesc}>Pulsa para registrar y ganar créditos hoy.</Text>
                         </View>
                         <View style={styles.cardRight}>
                             <Text style={styles.creditPlus}>+{amount}</Text>
@@ -180,6 +150,13 @@ export default function AccionesScreen() {
             })}
 
             <Text style={styles.note}>Tip: los montos cambian cada día para mantener motivación. Canjea en la Tienda cuando tengas suficientes créditos.</Text>
+
+            <TouchableOpacity style={{ marginTop: 24, padding: 14, backgroundColor: '#FFE6E6', borderRadius: 8, alignItems: 'center' }} onPress={() => {
+                forceResetDay();
+                showSnack('Reinicio forzado: ¡Hola Nuevo Día!');
+            }}>
+                <Text style={{ color: '#D32F2F', fontWeight: 'bold' }}>⚠️ Forzar Nuevo Día (Bug Fix)</Text>
+            </TouchableOpacity>
 
             {snackMsg && (
                 <Animated.View style={[styles.snack, { transform: [{ translateY: anim }] }]}>

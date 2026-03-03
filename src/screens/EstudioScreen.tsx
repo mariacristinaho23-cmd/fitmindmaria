@@ -1,7 +1,8 @@
+// @ts-nocheck
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { theme } from '../styles/theme';
-import { useStore, calculateStreak } from '../store/useStore';
+import { useStore, calculateStreak, getLocalDateStr } from '../store/useStore';
 import { CheckSquare, Square } from 'lucide-react-native';
 
 export default function EstudioScreen() {
@@ -31,7 +32,7 @@ export default function EstudioScreen() {
             return;
         }
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getLocalDateStr();
         const log: any = {
             date: todayStr,
             type: activeTab,

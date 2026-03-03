@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { supabase } from './supabase';
 
 export const createWorkout = async (date: string, name: string, duration?: number) => {

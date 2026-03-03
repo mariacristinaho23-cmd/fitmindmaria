@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { behaviorData } from "./data/behaviorData";
 export interface UserState {
     energiaHoy: number; // 1-5

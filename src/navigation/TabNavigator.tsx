@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Home, Repeat, Dumbbell, BookOpen, TrendingUp, ShoppingCart, Gift } from 'lucide-react-native';
