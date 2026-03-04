@@ -2,7 +2,8 @@
 // 1. IMPORTACIONES
 // Aquí traemos las herramientas que necesitamos para que esta pantalla funcione.
 // React y hooks: Son las piezas base de la librería para crear la interfaz y manejar efectos/estado.
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 // React Native: Nos da los "bloques de construcción" visuales (Text, View, Botones, Animaciones).
 import {
     View,
@@ -137,6 +138,12 @@ export default function HomeScreen() {
             generateDailyPlan(todayStr); // Llama a la función del store para crear el plan
         }
     }, [todayStr, todaysPlan, generateDailyPlan]);
+
+    useFocusEffect(
+        useCallback(() => {
+            useStore.getState().checkAndResetDay();
+        }, [])
+    );
 
     const handleEmotionUpdate = (emotion: Emotion) => {
         updateDailyLog(todayStr, { emotion });
