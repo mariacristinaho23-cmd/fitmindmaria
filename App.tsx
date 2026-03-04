@@ -38,6 +38,7 @@ export default function App() {
       try {
         console.log('Fetching public state from cloud...');
         await useStore.getState().pullStateFromCloud();
+        useStore.getState().checkAndResetDay();
 
         let syncTimeout: NodeJS.Timeout;
         useStore.subscribe((state: AppState) => {

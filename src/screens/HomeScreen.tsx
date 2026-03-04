@@ -463,6 +463,11 @@ export default function HomeScreen() {
                                     <Text style={styles.missionText}>
                                         {todaysPlan.fitnessPlan || "Entrena hoy"}
                                     </Text>
+                                    {todaysLog.trained && (
+                                        <View style={[styles.smallActionBtn, styles.smallActionBtnDone, { marginTop: 12 }]}>
+                                            <Text style={[styles.smallActionText, { color: "#FFF" }]}>Completado</Text>
+                                        </View>
+                                    )}
                                 </View>
 
                                 <View style={styles.missionCard}>
