@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Image, Modal, Pressable } from 'react-native';
 import { theme } from '../styles/theme';
 import { useStore, ExerciseLibraryItem } from '../store/useStore';
-import { createWorkout, createWorkoutFull, updateWorkoutFull, fetchExercises, saveExercise, deleteExercise as deleteExerciseDb } from '../lib/workouts';
+
 import { Plus, Check, Camera, Dumbbell, X, Trash2, List } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -33,30 +33,8 @@ export default function FitnessScreen() {
 
 
     useEffect(() => {
-        if (activeTab === 'biblioteca') {
-            loadExercisesFromDb();
-        }
-    }, [activeTab]);
-
-    const loadExercisesFromDb = async () => {
-        const { data, error } = await fetchExercises();
-        if (data && !error) {
-            const hidden = useStore.getState().hiddenExercises || [];
-            const visibleData = data.filter(ex => !hidden.includes(ex.id));
-            setExerciseLibrary(visibleData.map(ex => ({
-                id: ex.id,
-                name: ex.name,
-                muscleGroup: ex.muscleGroup,
-                notes: ex.notes || undefined,
-                equipment: ex.equipment || undefined,
-                imageUri: ex.imageUri || undefined
-            })));
-        }
-    };
-
-
-
-    const handleLogWeight = () => {
+        // Now using purely local state from useStore
+    }, [activeTab]); const handleLogWeight = () => {
         if (!currentWeight) {
             Alert.alert("Faltan datos", "Ingresa tu peso.");
             return;
@@ -111,26 +89,21 @@ export default function FitnessScreen() {
             return;
         }
 
-        console.log("Saving Exercise to Db:", { libName, libMuscle, libImage, editingExerciseId: editingExercise?.id });
-
-        const exerciseData = {
-            id: editingExercise?.id,
-            name: libName,
-            muscleGroup: libMuscle,
-            imageUri: libImage || undefined
-        };
-
-        const { error } = await saveExercise(exerciseData);
-
-        if (error) {
-            Alert.alert("Error", (error as any)?.message || JSON.stringify(error));
-            return;
+        if (editingExercise) {
+            updateExerciseInLibrary(editingExercise.id, {
+                name: libName,
+                muscleGroup: libMuscle,
+                imageUri: libImage || undefined
+            });
+            Alert.alert("Actualizado", "Ejercicio actualizado.");
+        } else {
+            addExerciseToLibrary({
+                name: libName,
+                muscleGroup: libMuscle,
+                imageUri: libImage || undefined
+            });
+            Alert.alert("Guardado", "Ejercicio guardado en la biblioteca.");
         }
-
-        Alert.alert(editingExercise ? "Actualizado" : "Guardado", "Ejercicio guardado en la biblioteca.");
-
-        // Refresh the list from the cloud
-        await loadExercisesFromDb();
 
         setEditingExercise(null);
         setLibName(''); setLibMuscle(''); setLibImage(null);
@@ -159,21 +132,11 @@ export default function FitnessScreen() {
                 {
                     text: "Eliminar",
                     style: "destructive",
-                    onPress: async () => {
-                        const { error } = await deleteExerciseDb(editingExercise.id);
-                        if (error) {
-                            // If Supabase blocks it (e.g. global exercise RLS), hide it locally instead
-                            useStore.getState().hideExercise(editingExercise.id);
-                            await loadExercisesFromDb();
-                            setEditingExercise(null);
-                            setLibName(''); setLibMuscle(''); setLibImage(null);
-                            Alert.alert("Ocultado", "El ejercicio predeterminado ha sido ocultado de tu lista.");
-                        } else {
-                            await loadExercisesFromDb();
-                            setEditingExercise(null);
-                            setLibName(''); setLibMuscle(''); setLibImage(null);
-                            Alert.alert("Eliminado", "El ejercicio ha sido borrado.");
-                        }
+                    onPress: () => {
+                        removeExerciseFromLibrary(editingExercise.id);
+                        setEditingExercise(null);
+                        setLibName(''); setLibMuscle(''); setLibImage(null);
+                        Alert.alert("Eliminado", "El ejercicio ha sido borrado de tu biblioteca.");
                     }
                 }
             ]
@@ -241,33 +204,6 @@ export default function FitnessScreen() {
             }
         } else {
             Alert.alert('Guardado', 'Entrenamiento del día actualizado en historial.');
-        }
-
-        // Try syncing exercises and workout to Supabase
-        try {
-            // If editing a session that has a remoteId, use it
-            let remoteId: string | undefined;
-            if (editingSessionId) {
-                const localSession = (workoutHistory || []).find(w => w.id === editingSessionId);
-                remoteId = localSession?.remoteId;
-            }
-
-            if (remoteId) {
-                await updateWorkoutFull(remoteId, todayStr, 'Entrenamiento de Hoy', 0, validExs);
-            } else {
-                const res = await createWorkoutFull(todayStr, 'Entrenamiento de Hoy', 0, validExs);
-                if (res && res.data && res.data.id) {
-                    // update local session to store remoteId
-                    const createdRemoteId = res.data.id;
-                    // find the recently added local session by date/name — prefer editingSessionId if present
-                    const targetLocal = editingSessionId ? (workoutHistory || []).find(w => w.id === editingSessionId) : (workoutHistory || []).find(w => w.date === todayStr && w.routineName === 'Entrenamiento de Hoy');
-                    if (targetLocal) {
-                        updateWorkoutSession({ ...targetLocal, remoteId: createdRemoteId });
-                    }
-                }
-            }
-        } catch (err) {
-            console.error('Error syncing workout full:', err);
         }
 
         setTodaysExercises([]);
