@@ -185,7 +185,7 @@ interface AppState {
     updateCustomReward: (id: string, updates: Partial<CustomReward>) => void;
     redeemReward: (reward: { title: string; cost: number }) => boolean;
 
-    pullStateFromCloud: (userId: string) => Promise<void>;
+    pullStateFromCloud: () => Promise<void>;
     pushStateToCloud: () => Promise<void>;
 }
 
@@ -528,12 +528,12 @@ export const useStore = create<AppState>()(
                 }
                 return false;
             },
-            pullStateFromCloud: async (userId: string) => {
+            pullStateFromCloud: async () => {
                 try {
                     const { data, error } = await supabase
-                        .from('user_sync_state')
+                        .from('app_state')
                         .select('state_json')
-                        .eq('user_id', userId)
+                        .eq('id', 1)
                         .single();
 
                     if (data && data.state_json) {
@@ -545,18 +545,15 @@ export const useStore = create<AppState>()(
             },
             pushStateToCloud: async () => {
                 try {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    if (!session) return;
-
                     const state = get();
                     const stateToSave = Object.fromEntries(
                         Object.entries(state as any).filter(([key, value]) => typeof value !== 'function')
                     );
 
                     await supabase
-                        .from('user_sync_state')
+                        .from('app_state')
                         .upsert({
-                            user_id: session.user.id,
+                            id: 1,
                             state_json: stateToSave,
                             updated_at: new Date().toISOString()
                         });
