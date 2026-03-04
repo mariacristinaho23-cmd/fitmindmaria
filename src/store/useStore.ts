@@ -141,6 +141,7 @@ interface AppState {
     customRewards: CustomReward[];
     redemptionHistory: Redemption[];
     hiddenExercises: string[];
+    customMuscleGroups: string[];
 
     readingMonthlyGoal: number;
     monthlyTrainingGoal: number;
@@ -184,6 +185,9 @@ interface AppState {
     removeCustomReward: (id: string) => void;
     updateCustomReward: (id: string, updates: Partial<CustomReward>) => void;
     redeemReward: (reward: { title: string; cost: number }) => boolean;
+
+    addCustomMuscleGroup: (name: string) => void;
+    removeCustomMuscleGroup: (name: string) => void;
 
     pullStateFromCloud: () => Promise<void>;
     pushStateToCloud: () => Promise<void>;
@@ -252,6 +256,7 @@ export const useStore = create<AppState>()(
             customRewards: [],
             redemptionHistory: [],
             hiddenExercises: [],
+            customMuscleGroups: [],
             readingMonthlyGoal: 500,
             monthlyTrainingGoal: 20,
             englishStreak: 0,
@@ -498,6 +503,12 @@ export const useStore = create<AppState>()(
             })),
             updateCustomReward: (id, updates) => set((state) => ({
                 customRewards: (state.customRewards || []).map(c => c.id === id ? { ...c, ...updates } : c)
+            })),
+            addCustomMuscleGroup: (name) => set((state) => ({
+                customMuscleGroups: Array.from(new Set([...(state.customMuscleGroups || []), name.trim()]))
+            })),
+            removeCustomMuscleGroup: (name) => set((state) => ({
+                customMuscleGroups: (state.customMuscleGroups || []).filter(g => g !== name)
             })),
             redeemReward: (reward) => {
                 const current = get().creditosDisponibles || 0;
