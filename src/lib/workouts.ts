@@ -79,7 +79,7 @@ export const updateWorkoutFull = async (remoteId: string, date: string, name: st
         }
 
         // Replace exercises: delete existing and insert new
-            if (exercises) {
+        if (exercises) {
             const { error: delErr } = await supabase.from('workout_exercises').delete().eq('workout_id', remoteId);
             if (delErr) {
                 if ((delErr as any)?.code === 'PGRST205') {
@@ -89,7 +89,7 @@ export const updateWorkoutFull = async (remoteId: string, date: string, name: st
                 }
             }
 
-                if (exercises.length > 0) {
+            if (exercises.length > 0) {
                 const toInsert = exercises.map(e => ({ workout_id: remoteId, exercise_id: e.exerciseId, weight: e.weight, reps: e.reps, sets: e.sets }));
                 const { error: insErr } = await supabase.from('workout_exercises').insert(toInsert);
                 if (insErr) {
@@ -187,7 +187,9 @@ export async function fetchExercises() {
         const { data: { user } } = await supabase.auth.getUser();
         let query = supabase.from('exercises').select('*').order('name', { ascending: true });
         if (user) {
-            query = query.eq('user_id', user.id);
+            query = query.or(`user_id.eq.${user.id},user_id.is.null`);
+        } else {
+            query = query.is('user_id', null);
         }
         const { data, error } = await query;
         if (error) {
