@@ -35,12 +35,7 @@ import {
 import { createWorkout } from "../lib/workouts";
 import { supabase } from "../lib/supabase";
 
-const MOTIVATIONAL_QUOTES = [
-    "Cada pequeña elección suma a la persona en la que te estás convirtiendo.",
-    "La disciplina es el puente entre tus metas y tus logros.",
-    "Estás construyendo una versión más fuerte y brillante de ti misma.",
-    "Priorízate hoy, tu 'yo' del mañana te lo agradecerá.",
-];
+
 
 // COMPONENTE PRINCIPAL: HomeScreen
 // En React, una pantalla o pedazo de interfaz es una función que retorna código "HTML-like" (JSX).
@@ -178,8 +173,7 @@ export default function HomeScreen() {
         { emoji: "😫", value: "terrible" },
     ];
 
-    const Quote =
-        MOTIVATIONAL_QUOTES[sugarFreeStreak % MOTIVATIONAL_QUOTES.length];
+
 
     const [pagesInput, setPagesInput] = useState("");
     const [snackMsg, setSnackMsg] = useState<string | null>(null);
@@ -398,7 +392,6 @@ export default function HomeScreen() {
                             )}
                         </View>
                     </View>
-                    <Text style={styles.quote}>"{Quote}"</Text>
                 </View>
 
                 <View style={styles.card}>
