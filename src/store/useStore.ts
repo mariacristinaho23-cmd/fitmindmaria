@@ -140,6 +140,7 @@ interface AppState {
     studyLogs: StudyLog[];
     customRewards: CustomReward[];
     redemptionHistory: Redemption[];
+    hiddenExercises: string[];
 
     readingMonthlyGoal: number;
     monthlyTrainingGoal: number;
@@ -171,6 +172,7 @@ interface AppState {
     addExerciseToLibrary: (item: Omit<ExerciseLibraryItem, 'id'>) => void;
     updateExerciseInLibrary: (id: string, updates: Partial<ExerciseLibraryItem>) => void;
     removeExerciseFromLibrary: (id: string) => void;
+    hideExercise: (id: string) => void;
     addWeightLog: (log: WeightLog) => void;
     addStudyLog: (log: Omit<StudyLog, 'id'>) => void;
     setReadingGoal: (goal: number) => void;
@@ -249,6 +251,7 @@ export const useStore = create<AppState>()(
             studyLogs: [],
             customRewards: [],
             redemptionHistory: [],
+            hiddenExercises: [],
             readingMonthlyGoal: 500,
             monthlyTrainingGoal: 20,
             englishStreak: 0,
@@ -449,6 +452,9 @@ export const useStore = create<AppState>()(
 
             removeExerciseFromLibrary: (id) => set((state) => ({
                 exerciseLibrary: (state.exerciseLibrary || []).filter(ex => ex.id !== id)
+            })),
+            hideExercise: (id) => set((state) => ({
+                hiddenExercises: Array.from(new Set([...(state.hiddenExercises || []), id]))
             })),
             addWeightLog: (log) => set((state) => {
                 const filtered = (state.weightLogs || []).filter(w => w.date !== log.date);

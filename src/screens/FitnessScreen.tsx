@@ -41,7 +41,9 @@ export default function FitnessScreen() {
     const loadExercisesFromDb = async () => {
         const { data, error } = await fetchExercises();
         if (data && !error) {
-            setExerciseLibrary(data.map(ex => ({
+            const hidden = useStore.getState().hiddenExercises || [];
+            const visibleData = data.filter(ex => !hidden.includes(ex.id));
+            setExerciseLibrary(visibleData.map(ex => ({
                 id: ex.id,
                 name: ex.name,
                 muscleGroup: ex.muscleGroup,
@@ -160,7 +162,12 @@ export default function FitnessScreen() {
                     onPress: async () => {
                         const { error } = await deleteExerciseDb(editingExercise.id);
                         if (error) {
-                            Alert.alert('Error', 'No se pudo eliminar el ejercicio.');
+                            // If Supabase blocks it (e.g. global exercise RLS), hide it locally instead
+                            useStore.getState().hideExercise(editingExercise.id);
+                            await loadExercisesFromDb();
+                            setEditingExercise(null);
+                            setLibName(''); setLibMuscle(''); setLibImage(null);
+                            Alert.alert("Ocultado", "El ejercicio predeterminado ha sido ocultado de tu lista.");
                         } else {
                             await loadExercisesFromDb();
                             setEditingExercise(null);
