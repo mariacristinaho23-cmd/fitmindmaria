@@ -4,7 +4,7 @@ import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Text, View, AppState } from 'react-native';
+import { Text, View, AppState, Alert } from 'react-native';
 import { useStore } from './src/store/useStore';
 import TabNavigator from './src/navigation/TabNavigator';
 import { supabase } from './src/lib/supabase';
@@ -42,6 +42,8 @@ export default function App() {
           const { data, error } = await supabase.auth.signInWithPassword({ email, password });
           if (!error && data?.session?.user) {
             console.log('Silent login successful');
+            // Notify success temporarily for debugging
+            Alert.alert('Estado', 'Conectado a la nube exitosamente ✨');
             await useStore.getState().pullStateFromCloud(data.session.user.id);
 
             let syncTimeout: NodeJS.Timeout;
@@ -55,9 +57,11 @@ export default function App() {
 
           } else {
             console.error('Silent login failed:', error?.message);
+            Alert.alert('Error de Login', error?.message || 'Revisa tu correo o contraseña en Supabase.');
           }
         } else {
           console.log('No credentials provided for silent login');
+          Alert.alert('Faltan Llaves', 'Vercel o Expo no leyeron el correo/contraseña. Debes detener el servidor y volverlo a correr.');
         }
       } catch (err) {
         console.error('Error during init sync:', err);
